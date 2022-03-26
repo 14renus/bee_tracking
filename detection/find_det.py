@@ -22,16 +22,6 @@ tf.logging.set_verbosity(tf.logging.ERROR)
 
 to_save = multiprocessing.Queue()
 
-def read_all_files(img_dir):
-    drs = [img_dir]
-    fls = []
-    for dr in drs:
-        dr_fls = os.listdir(dr)
-        dr_fls.sort()
-        fls.extend(map(lambda fl: os.path.join(dr, fl), dr_fls))
-    print("%i files" % len(fls), flush=True)
-    return fls
-
 def get_img_shape(img_dir):
     return func.read_img(0, img_dir).shape
 
@@ -191,7 +181,7 @@ def find_detections(checkpoint_dir=os.path.join(CHECKPOINT_DIR, "unet2"), img_di
     if not os.path.exists(TMP_DIR):
         os.mkdir(TMP_DIR)
 
-    fls = read_all_files(img_dir)
+    fls = func.get_all_files([img_dir])
     num_fls = len(fls)
 
     img_shape = get_img_shape(img_dir)

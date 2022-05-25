@@ -5,6 +5,19 @@ if int(tf.__version__[0]) > 1:
 import math
 
 def _create_conv_relu(inputs, name, filters, dropout_ratio, is_training, strides=[1,1], kernel_size=[3,3], padding="SAME", relu=True):
+    '''
+    Create layer computation with Con2D, dropout, batch normalization, and leadyrelu.
+
+    Args:
+      input: placeholder inputs.
+      name: prefix of layer names.
+      filters: number of filters in conv2d layer, each filter transforms [input w, input h, channels] --> [image w, image h, 1]
+        num filters equivalent to output dimension, output shape has [batch_size, input w, input h, filters]
+      dropout_ratio: fraction rate of input units randomly set to 0.
+      kernal_size: kernel h and w. 1 filter shape is [kernel h, kernel w, input channels]
+      padding: "SAME" preserves input w and h. otherwise, naturally applying filters reduces input dimension by 2*kernel_dim//2.
+      relu: whether to apply relu activation.
+    '''
     net = tf.layers.conv2d(inputs=inputs, filters=filters, strides=strides, kernel_size=kernel_size, padding=padding, name="%s_conv" % name)
     if dropout_ratio > 0:
         net = tf.layers.dropout(inputs=net, rate=dropout_ratio, training=is_training, name="%s_dropout" % name)
@@ -15,11 +28,22 @@ def _create_conv_relu(inputs, name, filters, dropout_ratio, is_training, strides
 
 
 def _create_pool(data, name, pool_size=[2,2], strides=[2,2]):
+    '''
+    Create max pool layer to downsample data.
+
+    Default pool_size and strides means divide input h and w by 2.
+    '''
     pool = tf.layers.max_pooling2d(inputs=data, pool_size=pool_size, strides=strides, padding='SAME', name=name)
     return pool
 
 
 def _contracting_path(data, num_layers, num_filters, dropout_ratio, is_training):
+    '''
+    Create contracting section of U-Net with num_layers number of steps.
+
+    With each step, the input w and h dvides by 2. The num of channels (dim_out) doubles.
+    Each step consists of 2 convolution blocks and then downsampling.
+    '''
     interim = []
 
     dim_out = num_filters
@@ -37,6 +61,13 @@ def _contracting_path(data, num_layers, num_filters, dropout_ratio, is_training)
 
 
 def _expansive_path(data, interim, num_layers, dim_in, dropout_ratio, is_training):
+    '''
+    Create expansive path of U-Net with num_layers number of steps.
+
+    With each step the input w and h doubles to reach the original input size. The number of channels (dim_out) divides by 2.
+    Each step consists of upsampling, concatenation with the output of the corresponding output in the contracting path,
+    and then 2 convolution blocks.
+    '''
     dim_out = int(dim_in / 2)
     for i in range(num_layers):
         name = "e_%i" % i
@@ -51,6 +82,15 @@ def _expansive_path(data, interim, num_layers, dim_in, dropout_ratio, is_trainin
 
 
 def create_unet2(num_layers, num_filters, data, is_training, prev=None, dropout_ratio=0, classes=3):
+    '''
+    Creates U-net architecture given architecture params and data placeholder.
+
+    Args:
+      num_layers: number of layer steps (made of 2 conv+relu pairs with same outout dim) in each of the contracting and expansive paths.
+      num_filters: number of convolution filters (output dimension) of first layer step in contracting path.
+      data: placeholder with shape [batch_size, image h, image w, num_channels].
+      prev: relu output of the previous frame, if available.
+    '''
 
     (interim, contracting_data) = _contracting_path(data, num_layers, num_filters, dropout_ratio, is_training)
 

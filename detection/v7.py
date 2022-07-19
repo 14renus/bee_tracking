@@ -103,16 +103,21 @@ def write_positions(data, pos_dir=paths.POS_DIR, class_mapping={'dancing_bee':0}
 
 ######## MAIN FUNCTIONS ##############
 
-def import_annotations(v7_annotations_dir, pos_dir=paths.POS_DIR, should_update_crop_spec=False, crop_w=FR_W, crop_h=FR_H, offset_x=1920-FR_W, offset_y=0, class_mapping={'dancing_bee':0}):
+def import_annotations(v7_annotations_file=None, v7_annotations_dir=None, pos_dir=paths.POS_DIR, should_update_crop_spec=False, crop_w=FR_W, crop_h=FR_H, offset_x=1920-FR_W, offset_y=0, class_mapping={'dancing_bee':0}):
     '''
-    Process v7 json files and write position .txt files in format that dataset.py accepts.
+    Process a v7 json file(s) and write position .txt files in format that dataset.py accepts.
 
     Args:
       v7_annotations_dir: dir holding json files.
       pos_dir: output dir with sub directories holding .txt files. sub directory name is taken from filename stored in json.
       Rest of args is documented in process_json() and write_positions() functions above.
     '''
-    json_files = func.get_all_files([v7_annotations_dir])
+    if (v7_annotations_file and v7_annotations_dir) or not (v7_annotations_file or v7_annotations_dir):
+        print("Warning: need to specify either `v7_annotations_file` or `v7_annotations_dir`")
+        return
+    json_files = [v7_annotations_file]
+    if v7_annotations_dir:
+      json_files = func.get_all_files([v7_annotations_dir])
     for json_file in json_files:
       data = process_json(json_file, should_update_crop_spec, crop_w, crop_h, offset_x, offset_y)
       write_positions(data, pos_dir, class_mapping)

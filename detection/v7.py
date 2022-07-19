@@ -52,7 +52,7 @@ def process_json(json_file, should_update_crop_spec=False, crop_w=FR_W, crop_h=F
     data['cropping_box'] = {
         'width': crop_w,
         'height': crop_h,
-        # x, y coordinates representing top left corner of cropped box
+        # x, y coordinates representing top left corner of cropped box, where top left corner of image is (0,0).
         'offset': {
             'y': offset_y,
             'x': offset_x
@@ -89,11 +89,15 @@ def write_positions(data, pos_dir=paths.POS_DIR, class_mapping={'dancing_bee':0}
             a = ((math.degrees(a) + 90) + 360) % 360
             bb = annotation['bounding_box']
             h,w,x,y = bb['h'],bb['w'],bb['x'],bb['y']
-            xc,yc = x+h/2,y+w/2
+            xc,yc = x+w/2,y+h/2
             cropping_spec = data.get('cropping_box') # Returns None if not in data dict.
             if cropping_spec:
-                offset = data['cropping_box']['offset']
+                cropping_box = data['cropping_box']
+                offset = cropping_box['offset']
                 xc,yc = xc-offset['x'], yc-offset['y']
+                # Do not write, if position is out of bounds of cropped frame.
+                if xc < 0 or x >= cropping_box['width'] or yc < 0 or y >= cropping_box['height']:
+                    continue
             with open(os.path.join(pos_dir, video_name, "%06d.txt" % int(frame)), 'a') as f:
                 np.savetxt(f, [[xc,yc,class_int,a]], fmt='%i', delimiter=',', newline='\n')
 

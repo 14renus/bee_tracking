@@ -174,8 +174,9 @@ def create_frames_from_video(video_path, img_dir=paths.IMG_DIR, frame_range=None
 
 ######## MAIN FUNCTION ##############
 
-def import_annotations_and_generate_frames(v7_annotations_file, video_dir, pos_dir=paths.POS_DIR, img_dir=paths.IMG_DIR, crop_w=FR_D, crop_h=FR_D, class_mapping={'dancing_bee':0}, allowed_instance_ids_for_cropping_spec=None):
+def import_annotations_and_generate_frames(v7_annotations_file, video_dir, pos_dir=paths.POS_DIR, img_dir=paths.IMG_DIR, crop_w=FR_D, crop_h=FR_D, class_mapping={'dancing_bee':0}, allowed_instance_ids_for_cropping_spec=None, frames_range_to_generate=None):
   cropping_spec = find_cropping_spec(v7_annotations_file, crop_w, crop_h, allowed_instance_ids=allowed_instance_ids_for_cropping_spec)
   video_filename = import_annotations(v7_annotations_file, pos_dir, class_mapping, cropping_spec)
   video_path = os.path.join(video_dir,video_filename)
-  create_frames_from_video(video_path, img_dir=paths.IMG_DIR, frame_range=None, cropping_spec=cropping_spec)
+  create_frames_from_video(video_path, img_dir=img_dir, frame_range=frames_range_to_generate, cropping_spec=cropping_spec)
+  return cropping_spec

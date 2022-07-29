@@ -35,14 +35,17 @@ def get_video_filename(data):
     '''
     return data['image']['original_filename'].replace(' ','_')
 
-def find_cropping_spec(v7_annotations_file, crop_w=FR_D, crop_h=FR_D):
+def find_cropping_spec(v7_annotations_file, crop_w=FR_D, crop_h=FR_D, allowed_instance_ids=None):
   '''
-  Given annotations of a video and the crop dimensions, find appropriate cropping offsets based on the bee's movement.
+  Given annotations of a video and the crop dimensions, find appropriate cropping offsets so that cropping will include all of the bee's movement.
 
   v7_annotations_file: full path of json file from v7 application.
   crop_w: width of resulting cropped frame
   crop_h: height of resulting cropped frame
+  allowed_instance_ids: List of int instance ids whose bounding boxes will be used to calculate cropping spec. If None, all instances are used.
   '''
+  if allowed_instance_ids:
+    allowed_instance_ids = set(allowed_instance_ids)
   bbx0, bbx1, bby0, bby1 = [], [], [], []
   with open(v7_annotations_file) as f:
     # load each video annotations
@@ -54,6 +57,10 @@ def find_cropping_spec(v7_annotations_file, crop_w=FR_D, crop_h=FR_D):
       # load each frame info
       for frame_id in group['frames']:
         frame = group['frames'][frame_id]
+        if 'bounding_box' not in frame:
+          continue
+        if allowed_instance_ids and frame["instance_id"]["value"] not in allowed_instance_ids:
+          continue
         # bb corners
         bbx0.append(frame['bounding_box']['x'])
         bbx1.append(frame['bounding_box']['x']+frame['bounding_box']['w']-1)
@@ -167,8 +174,8 @@ def create_frames_from_video(video_path, img_dir=paths.IMG_DIR, frame_range=None
 
 ######## MAIN FUNCTION ##############
 
-def import_annotations_and_generate_frames(v7_annotations_file, video_dir, pos_dir=paths.POS_DIR, img_dir=paths.IMG_DIR, crop_w=FR_D, crop_h=FR_D, class_mapping={'dancing_bee':0}):
-  cropping_spec = find_cropping_spec(v7_annotations_file, crop_w, crop_h)
+def import_annotations_and_generate_frames(v7_annotations_file, video_dir, pos_dir=paths.POS_DIR, img_dir=paths.IMG_DIR, crop_w=FR_D, crop_h=FR_D, class_mapping={'dancing_bee':0}, allowed_instance_ids_for_cropping_spec=None):
+  cropping_spec = find_cropping_spec(v7_annotations_file, crop_w, crop_h, allowed_instance_ids=allowed_instance_ids_for_cropping_spec)
   video_filename = import_annotations(v7_annotations_file, pos_dir, class_mapping, cropping_spec)
   video_path = os.path.join(video_dir,video_filename)
   create_frames_from_video(video_path, img_dir=paths.IMG_DIR, frame_range=None, cropping_spec=cropping_spec)

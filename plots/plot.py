@@ -227,11 +227,20 @@ def plot_all_trajectories(fps=10):
 ##################################################################
 
 
-def plot_detections(fr, save, img_dir=IMG_DIR, pos_dir=POS_DIR, fps=10):
+def plot_detections(fr=None, save=False, img_dir=IMG_DIR, pos_dir=POS_DIR, fps=10, frame_path=None):
+    '''
+    Plot positions on frame from img_dir.
+
+    Must specify either fr (frame number) or frame_path from which frame number is inferred.
+    '''
     if save:
         if not os.path.exists(PLOTS_DIR):
             os.mkdir(PLOTS_DIR)
 
+    if fr is None:
+      if frame_path is None:
+        print("Error: must specifiy fr (frame number) or frame_path")
+      fr = int(os.path.basename(frame_path).replace('.png',''))
     img = Image.open(os.path.join(img_dir, "%06d.png" % fr)).convert('RGBA')
     try:
       all_bees = np.loadtxt(os.path.join(pos_dir, "%06d.txt" % fr), delimiter=',').astype(np.int)

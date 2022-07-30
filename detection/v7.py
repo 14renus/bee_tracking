@@ -6,6 +6,7 @@ import math
 import numpy as np
 import os
 from PIL import Image
+import plots.plot as plot
 from utils.func import FR_D, FR_H, FR_W, make_dir
 from utils import func
 from utils import paths
@@ -172,11 +173,30 @@ def create_frames_from_video(video_path, img_dir=paths.IMG_DIR, frame_range=None
         im = Image.fromarray(frame)
         im.save(os.path.join(img_dir, video_name,"%06d.png" % frame_i))
 
+def save_labelled_video(video_filename, output_dir, fps=60, pos_dir=paths.POS_DIR, img_dir=paths.IMG_DIR):
+    path_save = os.path.join(output_dir,video_filename)
+    video_name = video_filename.replace('.mp4','')
+    img_dir=os.path.join(img_dir,video_name)
+    frame_files = func.get_all_files([img_dir])
+    img_shape = func.read_img(img_file=frame_files[0]).shape
+
+    fourcc = cv2.VideoWriter_fourcc(*'XVID')
+    writer = cv2.VideoWriter(path_save, fourcc, fps, img_shape)
+
+    for frame in frame_files:
+      img = plot.plot_detections(frame_path=frame, save=False, img_dir=img_dir, pos_dir=os.path.join(pos_dir,video_name), fps=60)
+      img = img.convert("RGB") # Remove 4th layer (transparencny) that is used by some formats like .png
+      writer.write(cv2.cvtColor(np.array(img).astype('uint8'), cv2.COLOR_RGB2BGR))
+
+    writer.release()
+
 ######## MAIN FUNCTION ##############
 
-def import_annotations_and_generate_frames(v7_annotations_file, video_dir, pos_dir=paths.POS_DIR, img_dir=paths.IMG_DIR, crop_w=FR_D, crop_h=FR_D, class_mapping={'dancing_bee':0}, allowed_instance_ids_for_cropping_spec=None, frames_range_to_generate=None):
+def import_annotations_and_generate_frames(v7_annotations_file, video_dir, pos_dir=paths.POS_DIR, img_dir=paths.IMG_DIR, crop_w=FR_D, crop_h=FR_D, class_mapping={'dancing_bee':0}, allowed_instance_ids_for_cropping_spec=None, frames_range_to_generate=None, labelled_video_dir=None):
   cropping_spec = find_cropping_spec(v7_annotations_file, crop_w, crop_h, allowed_instance_ids=allowed_instance_ids_for_cropping_spec)
   video_filename = import_annotations(v7_annotations_file, pos_dir, class_mapping, cropping_spec)
   video_path = os.path.join(video_dir,video_filename)
   create_frames_from_video(video_path, img_dir=img_dir, frame_range=frames_range_to_generate, cropping_spec=cropping_spec)
+  if labelled_video_dir:
+      save_labelled_video(video_filename, labelled_video_dir, fps=60, pos_dir=pos_dir, img_dir=img_dir)
   return cropping_spec

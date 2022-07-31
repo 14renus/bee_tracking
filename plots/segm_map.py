@@ -6,7 +6,8 @@ from utils.paths import DET_DATA_DIR, PLOTS_DIR
 
 
 def plot_segm_map_np(img, map):
-    map = map / np.max(map)
+    if np.max(map) != 0:
+        map = map / np.max(map)
 
     map_img = Image.new("RGBA", (map.shape[1], map.shape[0]), color=(0,0,0,0))
 

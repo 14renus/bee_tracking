@@ -5,6 +5,8 @@ from utils import func, paths
 from scipy.stats import norm
 
 '''
+
+
 Params:
   xc: center x coordinate
   yc: center y coordinate
@@ -38,6 +40,23 @@ def ellipse_around_point(xc, yc, a, h, w, r1, r2):
 
 
 def generate_segm_labels(img, pos, w=10, r1=7, r2=12):
+    '''
+    Generates segmentation labels given an image and np array of positions.
+
+    Args:
+      img: frame pixels with shape (h,w)
+      pos: annotations with shape (num_bees, 4)
+
+    Input: position array hold rows, where each row has x center, y center, bee_class, angle
+      3.  bee_class is 0 for full bee, 1 for cell bee
+      4.  angle in degrees
+
+    Output has 4 channels: data, class, angle, loss weight.
+      0. data: original image pixels
+      1. class: 0 for background, 1 for full bee, 2 for cell bee
+      2. angle: radians/2pi if full bee, 1 if cell bee, -1 if background
+      3. weight:
+    '''
     FR_H, FR_W = img.shape
     res = np.zeros((4, FR_H, FR_W), dtype=np.float32) # data,labels_segm, labels_angle, weight
     res[0] = img
@@ -92,9 +111,17 @@ def create_from_frames(frame_nbs, img_dir, pos_dir, out_dir=paths.DET_DATA_DIR):
     
     res = np.zeros((len(frame_nbs), 4, img_shape[0], img_shape[1]), dtype=np.float32)
     for i, frame_nb in enumerate(frame_nbs):
-        print("frame %i.." % frame_nb)
+        print("frame %i.." % frame_nb, end='')
         img = func.read_img(frame_nb, img_dir)
-        pos = np.loadtxt(os.path.join(pos_dir, "%06d.txt" % frame_nb), delimiter=",", dtype=np.int)
+        try:
+          pos = np.loadtxt(os.path.join(pos_dir, "%06d.txt" % frame_nb), delimiter=",", dtype=np.int)
+          # If pos holds only 1 bee annotation, convert to 2-D array.
+          if len(pos.shape) == 1:
+              pos = np.expand_dims(pos, axis=0)
+        # Empty pos array if no bee annotations for specific frame.
+        except IOError as e:
+          print('\n',e)
+          pos = np.array([])
         res[i] = generate_segm_labels(img, pos)
     np.savez(os.path.join(out_dir, "%06d.npz" % fl_nb), data=res, det=pos)
 

@@ -68,7 +68,7 @@ def plot_weight_map(frame_nb, fl_nb=0, data_path=DET_DATA_DIR, save=False):
     for i1 in range(map.shape[0]):
         for i2 in range(map.shape[1]):
             if (map[i1,i2] > 1):
-                map_img.putpixel((i1,i2), (255, 0, 0, map[i1,i2]))
+                map_img.putpixel((i2,i1), (255, 0, 0, map[i1,i2]))
 
     im = Image.fromarray(np.uint8((img+1)/2 * 255))
     im = im.convert("RGBA")

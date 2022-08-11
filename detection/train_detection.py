@@ -132,22 +132,29 @@ class TrainModel:
         is_bg = (lb == 0)
         is_fg = np.logical_not(is_bg)
         n_fg = np.sum(is_fg)
+        # Background accuracy. Correct if pred class 0 and angle < 0.
         bg = float(np.sum((pred_class[is_bg] == 0) & (pred_angle[is_bg] < 0)))/np.sum(is_bg)
         fg = 0
         fg_err = np.max(lb)
         angle_err = 0
         if n_fg > 0:
+            # Foreground accuracy. Correct if pred class != 0.
             fg = float(np.sum(pred_class[is_fg] != 0))/n_fg
+            # Foreground error. Incorrect if pred class != label class.
             fg_err = np.mean(lb[is_fg] != pred_class[is_fg])
+            # Foreground angle error. Abs difference in angle pred and label
             angle_err = np.mean(np.abs(pred_angle[is_fg] - angle[is_fg]))
         return np.array([0, loss, bg, fg, fg_err, angle_err])
 
-    '''
-    For a batch, randomly choose DS x DS patch, randomly flip horizontally and vertically.
-    '''
     def _sample_offsets(self, data):
+        '''
+        To generate a batch of size n, randomly choose n DS x DS patches. Also randomly flip horizontally and vertically.
+
+        :param data: data from 1 npz file (1 sequence of frames). shape = (num_frames, 4, H, W)
+        '''
         res = np.zeros((BATCH_SIZE, data.shape[0], data.shape[1], DS, DS))
         for i in range(BATCH_SIZE):
+            # Randomly sample x and y offset. Randomly decide to flip horizontally and vertically if with_augmentation.
             off_x, off_y, fh, fv = randint(0, data.shape[2]-DS), randint(0, data.shape[3]-DS), randint(0, 1), randint(0, 1)
             if not self.with_augmentation:
                 fh, fv = 0, 0
@@ -167,7 +174,7 @@ class TrainModel:
                 self.placeholder_prior: last_relus, self.is_train: is_train}
 
 
-    def run_test(self, batch_data, last_step, last_relus, plot):
+    def run_test(self, batch_data, last_step, last_relus, return_img):
         t1 = time.time()
 
         res_img = []
@@ -176,7 +183,7 @@ class TrainModel:
             outs = self.sess.run(self.outputs, feed_dict=self._input_batch(step, batch_data, last_relus, False))
             last_relus = outs[2]
             accuracy_t += self._accuracy(step, outs[1], outs[0], outs[3], batch_data)
-            if (step == (batch_data.shape[1]-1)) and plot:
+            if (step == (batch_data.shape[1]-1)) and return_img:
                 for i in range(BATCH_SIZE):
                     im_segm = segm_map.plot_segm_map_np(batch_data[i, step, 0, :, :], np.argmax(outs[0][i], axis=2))
                     im_angle = segm_map.plot_angle_map_np(batch_data[i,step,0,:,:], outs[3][i])
@@ -190,12 +197,19 @@ class TrainModel:
         return res_img
 
 
-    def run_train_test_iter(self, itr, plot):
+    def run_train_test_iter(self, itr, return_img):
+        '''
+        Run training and test on 1 .npz file.
+
+        :param itr: index of .npz file to load
+        :param return_img: whether to return test images
+        :return:
+        '''
         file = self.input_files[itr % len(self.input_files)]
         npz = np.load(os.path.join(self.data_path, file))
         data = npz['data']
         t1 = time.time()
-        train_steps = int(data.shape[0]*self.train_prop)
+        train_steps = int(data.shape[0]*self.train_prop) # Number of sequential frames to train on.
         batch_data, last_relus = self._sample_offsets(data)
 
         accuracy_t = np.zeros((6))
@@ -213,19 +227,35 @@ class TrainModel:
 
         img = []
         if step < data.shape[0]:
-            img = self.run_test(batch_data, train_steps, last_relus, plot)
+            img = self.run_test(batch_data, train_steps, last_relus, return_img)
         return img
 
 def run_training_on_model(model_obj, start_iter, n_iters, return_img):
     for i in range(start_iter, start_iter + n_iters):
         print("ITERATION: %i" % i, flush=True)
-        img = model_obj.run_train_test_iter(i, plot=return_img)
+        img = model_obj.run_train_test_iter(i, return_img=return_img)
         model_obj.saver.save(model_obj.sess, os.path.join(model_obj.checkpoint_dir, 'model_%06d.ckpt' % i))
     return model_obj, img, start_iter + n_iters
 
 
 def run_training(data_path=DET_DATA_DIR, checkpoint_dir=os.path.join(CHECKPOINT_DIR, "unet2"),
                  train_prop=0.9, n_iters=10, with_augmentation=True, return_img=False):
+    '''
+    Run train and test iterations on unet2 for n_iters.
+
+    Saves mettrics and checkpoints to checkpoint_dir.
+
+    :param data_path: dir holding .npz files.
+    :param checkpoint_dir: used to build latest checkpoint and store newly trained checkpoints.
+    :param train_prop: proportion of each .npz file to be trained on, rest is reserved for test.
+    :param n_iters: how many .npz files to iterate through.
+    :param with_augmentation: whether to randomly flip horizontally and vertically (train data only).
+    :param return_img: whether to return segmentation and angle preds on test images
+    :return:
+      model_obj: TrainModel object.
+      img: if return_img is true, return last iteration's predictions on test (list of tuples of segmentation & angle preds)
+      iters: total number of iterations performed to train model_obj (picks up from last checkpoint)
+    '''
     model_obj = TrainModel(data_path, train_prop, with_augmentation)
     start_iter = model_obj.build_model(checkpoint_dir)
     return run_training_on_model(model_obj, start_iter, n_iters, return_img)

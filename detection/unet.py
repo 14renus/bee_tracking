@@ -114,7 +114,17 @@ def create_unet2(num_layers, num_filters, data, is_training, prev=None, dropout_
 
 
 def loss(logits, labels, weight_map, numclasses=3):
+    '''
+    Calculates cross entropy loss of bee class predictions.
+
+    :param logits: segmentation output of bee class head, no softmax applied.
+    :param labels: same dimension of logits, integers corresponding to classes.
+    :param weight_map: same dimension as the logits, weight to apply to each pixel prediction.
+    :param numclasses: dimension of logits and labels.
+    :return: weighted average cross entropy loss.
+    '''
     oh_labels = tf.one_hot(indices=tf.cast(labels, tf.uint8), depth=numclasses, name="one_hot")
+    # Compute softmax and loss across last axis, which is the class dimension.
     loss_map = tf.nn.softmax_cross_entropy_with_logits(logits=logits, labels=oh_labels)
     weighted_loss = tf.multiply(loss_map, weight_map)
     loss = tf.reduce_mean(weighted_loss, name="weighted_loss")
@@ -123,9 +133,19 @@ def loss(logits, labels, weight_map, numclasses=3):
 
 
 def angle_loss(angle_pred, angle_labels, weight_map):
+    '''
+
+    :param angle_pred: model output
+    :param angle_labels: radians/2pi if full bee, 1 if cell bee, -1 if background
+    :param weight_map: same dimension as the predictions, weight to apply to each pixel prediction.
+    :return: sum of foreground and background loss, which are weighted averages of:
+      foreground: mean squared error (regression loss)
+      background: angle loss = sin^2 of the difference of angle pred and label.
+    '''
 
     sh = tf.shape(angle_pred)
-    angle_pred = tf.reshape(angle_pred, [sh[0],sh[1],sh[2]])
+    angle_pred = tf.reshape(angle_pred, [sh[0],sh[1],sh[2]])  # [BATCH_SIZE, DS, DS]
+    # Masks on pixels for background and foreground.
     bg_mask = tf.logical_or(tf.less(angle_pred, 0), tf.less(angle_labels, 0))
     fg_mask = tf.logical_not(bg_mask)
 

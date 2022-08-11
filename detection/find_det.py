@@ -157,6 +157,7 @@ class DetectionInference:
         t1 = time.time()
         output_i = 0
         n_runs = math.ceil(len(offsets) / BATCH_SIZE)
+        print('num patches per frame:', n_runs)
         print("STARTING INFERENCE")
         for i in range(n_runs):
             run_offs, start_off_i = self._load_offs_for_run(offsets, start_off_i)
@@ -173,11 +174,20 @@ class DetectionInference:
 
 ######## MAIN FUNCTION ##############
 
-def find_detections(checkpoint_dir=os.path.join(CHECKPOINT_DIR, "unet2"), img_dir=IMG_DIR, pos_dir=POS_DIR):
-    print(DATA_DIR)
-    if os.path.exists(pos_dir):
-        shutil.rmtree(pos_dir)
-    os.mkdir(pos_dir)
+def find_detections(checkpoint_dir=os.path.join(CHECKPOINT_DIR, "unet2"), img_dir=IMG_DIR, pos_dir=POS_DIR, overwrite=False):
+    '''
+    Run inferrence and write position detections for sequence of frames.
+
+    :param checkpoint_dir: directory holding model checkpoint to load for inferrence.
+    :param img_dir: directory storing sequence of frames.
+    :param pos_dir: output directory to store detections.
+    :param overwrite: whether to overwrite positions in directory.
+    '''
+    # Don't overwrite previous detections.
+    if not overwrite and os.path.exists(pos_dir) and len(os.listdir(pos_dir))!=0:
+        print('WARNING dir %s already exists. Set overwrite to True to write anyways.' % (pos_dir))
+        return
+    func.make_dir(pos_dir)
     if not os.path.exists(TMP_DIR):
         os.mkdir(TMP_DIR)
 
@@ -186,6 +196,8 @@ def find_detections(checkpoint_dir=os.path.join(CHECKPOINT_DIR, "unet2"), img_di
 
     img_shape = get_img_shape(img_dir)
     offsets = generate_offsets_for_frame(img_shape)
+    print('frame shape:', img_shape)
+
     with DetectionInference() as model_obj:
         model_obj.build_model(checkpoint_dir)
         model_obj.start_workers(num_fls, pos_dir)

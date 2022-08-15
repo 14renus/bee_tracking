@@ -3,6 +3,7 @@ if int(tf.__version__[0]) > 1:
     import tensorflow.compat.v1 as tf
     tf.disable_v2_behavior()
 import math
+import numpy as np
 
 def _create_conv_relu(inputs, name, filters, dropout_ratio, is_training, strides=[1,1], kernel_size=[3,3], padding="SAME", relu=True):
     '''
@@ -149,13 +150,20 @@ def angle_loss(angle_pred, angle_labels, weight_map):
     bg_mask = tf.logical_or(tf.less(angle_pred, 0), tf.less(angle_labels, 0))
     fg_mask = tf.logical_not(bg_mask)
 
+    num_bg, num_fg = tf.reduce_sum(tf.cast(bg_mask,dtype=tf.uint8)), tf.reduce_sum(tf.cast(fg_mask,dtype=tf.uint8))
+
     fg_loss = tf.multiply(tf.boolean_mask(weight_map, fg_mask),
-                          tf.square(tf.sin((tf.boolean_mask(angle_pred, fg_mask) - tf.boolean_mask(angle_labels, fg_mask))*math.pi)))
+                          tf.square(tf.sin((tf.boolean_mask(angle_pred, fg_mask) - tf.boolean_mask(angle_labels,
+                                                                                                   fg_mask)) * math.pi)))
     bg_loss = tf.multiply(tf.boolean_mask(weight_map, bg_mask),
                           tf.square(tf.boolean_mask(angle_pred, bg_mask) - tf.boolean_mask(angle_labels, bg_mask)))
 
-    fg_loss = tf.reduce_mean(fg_loss, name="weighted_angle_loss")
     bg_loss = tf.reduce_mean(bg_loss, name="weighted_bg_angle_loss")
+    fg_loss = tf.reduce_mean(fg_loss, name="weighted_angle_loss")
+
+    # Avoid nan if no bg or fg pixels to compute loss over.
+    bg_loss = tf.cond(num_bg > 0, lambda: bg_loss, lambda: 0.)
+    fg_loss = tf.cond(num_fg > 0, lambda: fg_loss, lambda: 0.)
 
     loss = fg_loss + bg_loss
     #tf.add_to_collection('losses', loss)

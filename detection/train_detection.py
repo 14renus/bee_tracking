@@ -1,7 +1,7 @@
 import os
 import re
 import time, math
-from random import shuffle, randint
+from random import shuffle, randint, seed
 import tensorflow as tf
 if int(tf.__version__[0]) > 1:
     import tensorflow.compat.v1 as tf
@@ -44,10 +44,14 @@ def flip_v(data):
 
 class TrainModel:
 
-    def __init__(self, data_path, train_prop, with_augmentation, dropout_ratio=0):
+    def __init__(self, data_path, train_prop, with_augmentation, dropout_ratio=0, set_random_seed=False):
         self.data_path = data_path
         self.input_files = [f for f in os.listdir(data_path) if re.search('npz', f)]
-        shuffle(self.input_files)
+        self.set_random_seed = set_random_seed
+        if self.set_random_seed:
+          seed(0)
+        else:
+          shuffle(self.input_files)
         self.train_prop = train_prop
         self.with_augmentation = with_augmentation
         self.dropout_ratio = dropout_ratio
@@ -64,7 +68,9 @@ class TrainModel:
 
 
     def _loss(self, img, label, weight, angle_label, prior):
-        logits, last_relu, angle_pred = unet.create_unet2(NUM_LAYERS, NUM_FILTERS, img, self.is_train, prev=prior, classes=CLASSES)
+        logits, last_relu, angle_pred = unet.create_unet2(NUM_LAYERS, NUM_FILTERS, img, self.is_train, prev=prior,
+                                                          dropout_ratio=self.dropout_ratio,
+                                                          set_random_seed=self.set_random_seed, classes=CLASSES)
         loss_softmax = unet.loss(logits, label, weight, CLASSES)
         loss_angle = unet.angle_loss(angle_pred, angle_label, weight)
 
@@ -239,7 +245,8 @@ def run_training_on_model(model_obj, start_iter, n_iters, return_img):
 
 
 def run_training(data_path=DET_DATA_DIR, checkpoint_dir=os.path.join(CHECKPOINT_DIR, "unet2"),
-                 train_prop=0.9, n_iters=10, with_augmentation=True, return_img=False):
+                 train_prop=0.9, n_iters=10, with_augmentation=True, dropout_ratio=0, set_random_seed=False,
+                 return_img=False):
     '''
     Run train and test iterations on unet2 for n_iters.
 
@@ -250,13 +257,14 @@ def run_training(data_path=DET_DATA_DIR, checkpoint_dir=os.path.join(CHECKPOINT_
     :param train_prop: proportion of each .npz file to be trained on, rest is reserved for test.
     :param n_iters: how many .npz files to iterate through.
     :param with_augmentation: whether to randomly flip horizontally and vertically (train data only).
+    :param set_random_seed:
     :param return_img: whether to return segmentation and angle preds on test images
     :return:
       model_obj: TrainModel object.
       img: if return_img is true, return last iteration's predictions on test (list of tuples of segmentation & angle preds)
       iters: total number of iterations performed to train model_obj (picks up from last checkpoint)
     '''
-    model_obj = TrainModel(data_path, train_prop, with_augmentation)
+    model_obj = TrainModel(data_path, train_prop, with_augmentation, dropout_ratio, set_random_seed)
     start_iter = model_obj.build_model(checkpoint_dir)
     return run_training_on_model(model_obj, start_iter, n_iters, return_img)
 

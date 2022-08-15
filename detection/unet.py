@@ -5,7 +5,7 @@ if int(tf.__version__[0]) > 1:
 import math
 import numpy as np
 
-def _create_conv_relu(inputs, name, filters, dropout_ratio, is_training, strides=[1,1], kernel_size=[3,3], padding="SAME", relu=True):
+def _create_conv_relu(inputs, name, filters, dropout_ratio, is_training, strides=[1,1], kernel_size=[3,3], padding="SAME", relu=True, random_seed=0):
     '''
     Create layer computation with Con2D, dropout, batch normalization, and leadyrelu.
 
@@ -18,10 +18,14 @@ def _create_conv_relu(inputs, name, filters, dropout_ratio, is_training, strides
       kernal_size: kernel h and w. 1 filter shape is [kernel h, kernel w, input channels]
       padding: "SAME" preserves input w and h. otherwise, naturally applying filters reduces input dimension by 2*kernel_dim//2.
       relu: whether to apply relu activation.
+      random_seed: seed for droupout, to remove variance in training.
     '''
     net = tf.layers.conv2d(inputs=inputs, filters=filters, strides=strides, kernel_size=kernel_size, padding=padding, name="%s_conv" % name)
     if dropout_ratio > 0:
-        net = tf.layers.dropout(inputs=net, rate=dropout_ratio, training=is_training, name="%s_dropout" % name)
+        if random_seed > 0:
+            net = tf.layers.dropout(inputs=net, rate=dropout_ratio, seed=random_seed, training=is_training, name="%s_dropout" % name)
+        else:
+            net = tf.layers.dropout(inputs=net, rate=dropout_ratio, seed=random_seed, training=is_training, name="%s_dropout" % name)
     net = tf.layers.batch_normalization(net, center=True, scale=False, training=is_training, name="%s_bn" % name)
     if relu:
         net = tf.nn.relu(net) # leaky relu
@@ -82,7 +86,7 @@ def _expansive_path(data, interim, num_layers, dim_in, dropout_ratio, is_trainin
     return data
 
 
-def create_unet2(num_layers, num_filters, data, is_training, prev=None, dropout_ratio=0, classes=3):
+def create_unet2(num_layers, num_filters, data, is_training, prev=None, dropout_ratio=0, set_random_seed=False, classes=3):
     '''
     Creates U-net architecture given architecture params and data placeholder.
 
@@ -91,13 +95,15 @@ def create_unet2(num_layers, num_filters, data, is_training, prev=None, dropout_
       num_filters: number of convolution filters (output dimension) of first layer step in contracting path.
       data: placeholder with shape [batch_size, image h, image w, num_channels].
       prev: relu output of the previous frame, if available.
+      dropout_ratio: ratio of neurons to drop during dropout for each forward call.
+      set_random_seed: remove variance from dropout layer between train iterations.
     '''
 
     (interim, contracting_data) = _contracting_path(data, num_layers, num_filters, dropout_ratio, is_training)
 
     middle_dim = num_filters * 2**num_layers
-    middle_conv_1 = _create_conv_relu(contracting_data, "m_1", middle_dim, dropout_ratio=dropout_ratio, is_training=is_training)
-    middle_conv_2 = _create_conv_relu(middle_conv_1, "m_2", middle_dim, dropout_ratio=dropout_ratio, is_training=is_training)
+    middle_conv_1 = _create_conv_relu(contracting_data, "m_1", middle_dim, dropout_ratio=dropout_ratio, random_seed=set_random_seed*1, is_training=is_training)
+    middle_conv_2 = _create_conv_relu(middle_conv_1, "m_2", middle_dim, dropout_ratio=dropout_ratio, random_seed=set_random_seed*2, is_training=is_training)
     middle_end = middle_conv_2
 
     expansive_path = _expansive_path(middle_end, interim, num_layers, middle_dim, dropout_ratio, is_training)

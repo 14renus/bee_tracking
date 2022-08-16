@@ -3,7 +3,7 @@ if int(tf.__version__[0]) > 1:
     import tensorflow.compat.v1 as tf
     tf.disable_v2_behavior()
 import math
-import numpy as np
+from utils.func import CLASSES
 
 def _create_conv_relu(inputs, name, filters, dropout_ratio, is_training, strides=[1,1], kernel_size=[3,3], padding="SAME", relu=True, random_seed=0):
     '''
@@ -86,7 +86,7 @@ def _expansive_path(data, interim, num_layers, dim_in, dropout_ratio, is_trainin
     return data
 
 
-def create_unet2(num_layers, num_filters, data, is_training, prev=None, dropout_ratio=0, set_random_seed=False, classes=3):
+def create_unet2(num_layers, num_filters, data, is_training, prev=None, dropout_ratio=0, set_random_seed=False, num_classes=3):
     '''
     Creates U-net architecture given architecture params and data placeholder.
 
@@ -97,7 +97,9 @@ def create_unet2(num_layers, num_filters, data, is_training, prev=None, dropout_
       prev: relu output of the previous frame, if available.
       dropout_ratio: ratio of neurons to drop during dropout for each forward call.
       set_random_seed: remove variance from dropout layer between train iterations.
+      num_classes: number of classes to predict.
     '''
+    classes = num_classes if num_classes > 2 else 1
 
     (interim, contracting_data) = _contracting_path(data, num_layers, num_filters, dropout_ratio, is_training)
 
@@ -120,19 +122,23 @@ def create_unet2(num_layers, num_filters, data, is_training, prev=None, dropout_
     return logits, last_relu, angle_pred
 
 
-def loss(logits, labels, weight_map, numclasses=3):
+def loss(logits, labels, weight_map, num_classes=3):
     '''
     Calculates cross entropy loss of bee class predictions.
 
     :param logits: segmentation output of bee class head, no softmax applied.
-    :param labels: same dimension of logits, integers corresponding to classes.
+    :param labels: same dimension of logits, integers corresponding to classes (starting with 0).
     :param weight_map: same dimension as the logits, weight to apply to each pixel prediction.
     :param numclasses: dimension of logits and labels.
     :return: weighted average cross entropy loss.
     '''
-    oh_labels = tf.one_hot(indices=tf.cast(labels, tf.uint8), depth=numclasses, name="one_hot")
-    # Compute softmax and loss across last axis, which is the class dimension.
-    loss_map = tf.nn.softmax_cross_entropy_with_logits(logits=logits, labels=oh_labels)
+    if num_classes > 2:
+        oh_labels = tf.one_hot(indices=tf.cast(labels, tf.uint8), depth=num_classes, name="one_hot")
+        # Compute softmax and loss across last axis, which is the class dimension.
+        loss_map = tf.nn.softmax_cross_entropy_with_logits(logits=logits, labels=oh_labels)
+    else:
+        logits = tf.squeeze(logits)  # (BATCH_SIZE, DS, DS, 1) --> (BATCH_SIZE, DS, DS,)
+        loss_map = tf.nn.sigmoid_cross_entropy_with_logits(logits=logits, labels=tf.cast(labels, tf.float32))
     weighted_loss = tf.multiply(loss_map, weight_map)
     loss = tf.reduce_mean(weighted_loss, name="weighted_loss")
     #tf.add_to_collection('losses', loss)

@@ -44,7 +44,7 @@ def flip_v(data):
 
 class TrainModel:
 
-    def __init__(self, data_path, train_prop, with_augmentation, dropout_ratio=0, set_random_seed=False, num_classes=3):
+    def __init__(self, data_path, train_prop, with_augmentation, dropout_ratio=0, learning_rate=BASE_LR, set_random_seed=False, num_classes=3):
         self.data_path = data_path
         self.input_files = [f for f in os.listdir(data_path) if re.search('npz', f)]
         self.set_random_seed = set_random_seed
@@ -55,6 +55,7 @@ class TrainModel:
         self.train_prop = train_prop
         self.with_augmentation = with_augmentation
         self.dropout_ratio = dropout_ratio
+        self.learning_rate = learning_rate
         self.num_classes = num_classes
 
     def __enter__(self):
@@ -86,7 +87,7 @@ class TrainModel:
         with tf.Graph().as_default(), tf.device(cpu):
             global_step = tf.get_variable('global_step', [], initializer=tf.constant_initializer(0), trainable=False)
 
-            opt = tf.train.AdamOptimizer(learning_rate=BASE_LR)
+            opt = tf.train.AdamOptimizer(learning_rate=self.learning_rate)
             self.is_train = tf.placeholder(tf.bool, shape=[])
             self.placeholder_img = tf.placeholder(tf.float32, shape=(BATCH_SIZE, DS, DS, 1), name="images")
             self.placeholder_label = tf.placeholder(tf.uint8, shape=(BATCH_SIZE, DS, DS), name="labels")
@@ -246,8 +247,8 @@ def run_training_on_model(model_obj, start_iter, n_iters, return_img):
 
 
 def run_training(data_path=DET_DATA_DIR, checkpoint_dir=os.path.join(CHECKPOINT_DIR, "unet2"),
-                 train_prop=0.9, n_iters=10, with_augmentation=True, dropout_ratio=0, set_random_seed=False,
-                 num_classes=3, return_img=False):
+                 train_prop=0.9, n_iters=10, with_augmentation=True, dropout_ratio=0, learning_rate=BASE_LR, set_random_seed=False,
+                 num_classes=CLASSES, return_img=False):
     '''
     Run train and test iterations on unet2 for n_iters.
 
@@ -265,7 +266,7 @@ def run_training(data_path=DET_DATA_DIR, checkpoint_dir=os.path.join(CHECKPOINT_
       img: if return_img is true, return last iteration's predictions on test (list of tuples of segmentation & angle preds)
       iters: total number of iterations performed to train model_obj (picks up from last checkpoint)
     '''
-    model_obj = TrainModel(data_path, train_prop, with_augmentation, dropout_ratio, set_random_seed, num_classes)
+    model_obj = TrainModel(data_path, train_prop, with_augmentation, dropout_ratio, learning_rate, set_random_seed, num_classes)
     start_iter = model_obj.build_model(checkpoint_dir)
     return run_training_on_model(model_obj, start_iter, n_iters, return_img)
 

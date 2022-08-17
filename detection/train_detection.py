@@ -89,11 +89,11 @@ class TrainModel:
 
             opt = tf.train.AdamOptimizer(learning_rate=self.learning_rate)
             self.is_train = tf.placeholder(tf.bool, shape=[])
-            self.placeholder_img = tf.placeholder(tf.float32, shape=(BATCH_SIZE, DS, DS, 1), name="images")
-            self.placeholder_label = tf.placeholder(tf.uint8, shape=(BATCH_SIZE, DS, DS), name="labels")
-            self.placeholder_weight = tf.placeholder(tf.float32, shape=(BATCH_SIZE, DS, DS), name="weight")
-            self.placeholder_angle_label = tf.placeholder(tf.float32, shape=(BATCH_SIZE, DS, DS), name="angle_labels")
-            self.placeholder_prior = tf.placeholder(tf.float32, shape=(BATCH_SIZE, DS, DS, NUM_FILTERS), name="prior")
+            self.placeholder_img = tf.placeholder(tf.float32, shape=(None, DS, DS, 1), name="images")
+            self.placeholder_label = tf.placeholder(tf.uint8, shape=(None, DS, DS), name="labels")
+            self.placeholder_weight = tf.placeholder(tf.float32, shape=(None, DS, DS), name="weight")
+            self.placeholder_angle_label = tf.placeholder(tf.float32, shape=(None, DS, DS), name="angle_labels")
+            self.placeholder_prior = tf.placeholder(tf.float32, shape=(None, DS, DS, NUM_FILTERS), name="prior")
 
             with tf.device(tf_dev), tf.name_scope('%s_%d' % (GPU_NAME, 0)) as scope:
                 logits, loss, last_relu, angle_pred = self._loss(self.placeholder_img, self.placeholder_label,

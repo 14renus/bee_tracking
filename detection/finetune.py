@@ -76,15 +76,18 @@ class FinetuneModel(train_detection.TrainModel):
 
 
 def run_finetuning(data_path=DET_DATA_DIR, checkpoint_dir=os.path.join(CHECKPOINT_DIR, "unet2"),
-                 train_prop=0.9, n_iters=10, with_augmentation=True, dropout_ratio=0, learning_rate=train_detection.BASE_LR, set_random_seed=False,
-                 num_classes=CLASSES, return_img=False):
+                   output_checkpoint_dir=None,
+                   train_prop=0.9, n_iters=10, with_augmentation=True, dropout_ratio=0,
+                   learning_rate=train_detection.BASE_LR, set_random_seed=False,
+                   num_classes=CLASSES, return_img=False):
     '''
     Run train and test iterations on unet2 for n_iters.
 
     Saves mettrics and checkpoints to checkpoint_dir.
 
     :param data_path: dir holding .npz files.
-    :param checkpoint_dir: used to build latest checkpoint and store newly trained checkpoints.
+    :param checkpoint_dir: used to build latest checkpoint, also to store newly trained checkpoints only if output_checkpoint_dir is not None.
+    :param output_checkpoint_dir: if not None used to store newly trained checkpoints.
     :param train_prop: proportion of each .npz file to be trained on, rest is reserved for test.
     :param n_iters: how many .npz files to iterate through.
     :param with_augmentation: whether to randomly flip horizontally and vertically (train data only).
@@ -97,4 +100,7 @@ def run_finetuning(data_path=DET_DATA_DIR, checkpoint_dir=os.path.join(CHECKPOIN
     '''
     model_obj = FinetuneModel(data_path, train_prop, with_augmentation, dropout_ratio, learning_rate, set_random_seed, num_classes)
     start_iter = model_obj.build_model(checkpoint_dir)
+    if output_checkpoint_dir:
+        func.make_dir(output_checkpoint_dir)
+        model_obj.checkpoint_dir = output_checkpoint_dir
     return train_detection.run_training_on_model(model_obj, start_iter, n_iters, return_img)

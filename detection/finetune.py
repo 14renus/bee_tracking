@@ -10,14 +10,26 @@ from utils.paths import DET_DATA_DIR, CHECKPOINT_DIR
 from utils.func import DS, GPU_NAME, NUM_LAYERS, NUM_FILTERS, CLASSES
 
 class FinetuneModel(train_detection.TrainModel):
+    def __init__(self, data_path, train_prop, with_augmentation, dropout_ratio=0, learning_rate=train_detection.BASE_LR,
+                 set_random_seed=False, num_classes=3, continue_finetuning_from_saved_checkpoint=False):
+        super(FinetuneModel, self).__init__(data_path, train_prop, with_augmentation,
+                                                                  dropout_ratio, learning_rate, set_random_seed, num_classes)
+        self.add_finetune_nodes = not continue_finetuning_from_saved_checkpoint
+
 
     def _loss(self, img, label, weight, angle_label, prior, graph, scope):
         last_relu = graph.get_tensor_by_name(scope + "Relu_13:0")
         angle_pred = graph.get_tensor_by_name(scope + "angle_pred_bn/cond/Merge:0")
-        conv_logits = unet._create_conv_relu(last_relu, "new_conv_logits", NUM_FILTERS, dropout_ratio=self.dropout_ratio,
-                                        is_training=self.is_train)
-        classes = self.num_classes if self.num_classes > 2 else 1
-        logits = unet._create_conv_relu(conv_logits, "new_logits", classes, self.dropout_ratio, is_training=self.is_train)
+
+        if self.add_finetune_nodes:
+            conv_logits = unet._create_conv_relu(last_relu, "new_conv_logits", NUM_FILTERS,
+                                                 dropout_ratio=self.dropout_ratio,
+                                                 is_training=self.is_train)
+            classes = self.num_classes if self.num_classes > 2 else 1
+            logits = unet._create_conv_relu(conv_logits, "new_logits", classes, self.dropout_ratio,
+                                            is_training=self.is_train)
+        else:
+            logits = graph.get_tensor_by_name(scope + "Relu_17:0")
 
         loss_softmax = unet.loss(logits, label, weight, self.num_classes)
         loss_angle = unet.angle_loss(angle_pred, angle_label, weight)
@@ -49,21 +61,26 @@ class FinetuneModel(train_detection.TrainModel):
             # Load saved global_step.
             global_step = tf.get_variable('global_step', [], initializer=tf.constant_initializer(0), trainable=False)
             # New adam optimizer.
-            opt = tf.train.AdamOptimizer(learning_rate=train_detection.BASE_LR, name='MyNewAdam')
+            if self.add_finetune_nodes:
+              opt = tf.train.AdamOptimizer(learning_rate=train_detection.BASE_LR, name='MyNewAdam')
 
             with tf.device(tf_dev), tf.name_scope('%s_%d' % (GPU_NAME, 0)) as scope:
                 logits, loss, last_relu, angle_pred = self._loss(self.placeholder_img, self.placeholder_label,
                                                                  self.placeholder_weight, self.placeholder_angle_label,
                                                                  self.placeholder_prior, graph, scope)
                 self.outputs = (logits, loss, last_relu, angle_pred)
-                update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
-                grads = opt.compute_gradients(loss)
+                if self.add_finetune_nodes:
+                    update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
+                    grads = opt.compute_gradients(loss)
 
-            apply_gradient_op = opt.apply_gradients(grads, global_step=global_step)
-            variable_averages = tf.train.ExponentialMovingAverage(func.MOVING_AVERAGE_DECAY, global_step, name='MyNewExponentialMovingAverage')
-            variables_averages_op = variable_averages.apply(tf.trainable_variables())
-            batchnorm_updates_op = tf.group(*update_ops)
-            self.train_op = tf.group(apply_gradient_op, variables_averages_op, batchnorm_updates_op)
+            if self.add_finetune_nodes:
+                apply_gradient_op = opt.apply_gradients(grads, global_step=global_step)
+                variable_averages = tf.train.ExponentialMovingAverage(func.MOVING_AVERAGE_DECAY, global_step, name='MyNewExponentialMovingAverage')
+                variables_averages_op = variable_averages.apply(tf.trainable_variables())
+                batchnorm_updates_op = tf.group(*update_ops)
+                self.train_op = tf.group(apply_gradient_op, variables_averages_op, batchnorm_updates_op, name='train_op')
+            else:
+                self.train_op = graph.get_operation_by_name("train_op")
 
             # Init added variables only, not variables loaded from checkpoint.
             global_vars = tf.global_variables()
@@ -79,7 +96,8 @@ def run_finetuning(data_path=DET_DATA_DIR, checkpoint_dir=os.path.join(CHECKPOIN
                    output_checkpoint_dir=None,
                    train_prop=0.9, n_iters=10, with_augmentation=True, dropout_ratio=0,
                    learning_rate=train_detection.BASE_LR, set_random_seed=False,
-                   num_classes=CLASSES, return_img=False):
+                   num_classes=CLASSES, return_img=False,
+                   continue_finetuning_from_saved_checkpoint=False):
     '''
     Run train and test iterations on unet2 for n_iters.
 
@@ -93,12 +111,13 @@ def run_finetuning(data_path=DET_DATA_DIR, checkpoint_dir=os.path.join(CHECKPOIN
     :param with_augmentation: whether to randomly flip horizontally and vertically (train data only).
     :param set_random_seed:
     :param return_img: whether to return segmentation and angle preds on test images
+    :param continue_finetuning_from_saved_checkpoint: whether to skip adding new nodes, and just continiue training
     :return:
       model_obj: TrainModel object.
       img: if return_img is true, return last iteration's predictions on test (list of tuples of segmentation & angle preds)
       iters: total number of iterations performed to train model_obj (picks up from last checkpoint)
     '''
-    model_obj = FinetuneModel(data_path, train_prop, with_augmentation, dropout_ratio, learning_rate, set_random_seed, num_classes)
+    model_obj = FinetuneModel(data_path, train_prop, with_augmentation, dropout_ratio, learning_rate, set_random_seed, num_classes, continue_finetuning_from_saved_checkpoint)
     start_iter = model_obj.build_model(checkpoint_dir)
     if output_checkpoint_dir:
         func.make_dir(output_checkpoint_dir)

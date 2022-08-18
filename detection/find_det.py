@@ -171,10 +171,53 @@ class DetectionInference:
 
         print("ALL FINISHED - time: %.3f min" % ((time.time() - t1)/60))
 
+class FinetunedDetectionInference(DetectionInference):
+
+    def __init__(self, num_classes=2):
+        super(DetectionInference, self).__init__()
+        self.num_classes = num_classes
+
+    def build_model(self, checkpoint_dir):
+        cpu, gpu = func.find_devices()
+        tf_dev = gpu if gpu != "" else cpu
+        with tf.Graph().as_default(), tf.device(cpu):
+            # equals the number of batches processed * num_gpus.
+            # update_ops = []
+            self.is_train = False
+
+            with tf.device(tf_dev), tf.name_scope('%s_%d' % (GPU_NAME, 0)) as scope:
+                self.placeholder_img = tf.placeholder(tf.float32, shape=(BATCH_SIZE, DS, DS, 1), name="images")
+                self.placeholder_prior = tf.placeholder(tf.float32, shape=(BATCH_SIZE, DS, DS, NUM_FILTERS),
+                                                        name="prior")
+                # Add finetuned layer.
+                logits, last_relu, angle_pred = unet.create_unet2(NUM_LAYERS, NUM_FILTERS, self.placeholder_img,
+                                                                  self.is_train, prev=self.placeholder_prior,
+                                                                  num_classes=CLASSES)
+
+                conv_logits = unet._create_conv_relu(last_relu, "new_conv_logits", NUM_FILTERS,
+                                                     dropout_ratio=0,
+                                                     is_training=self.is_train)
+                classes = self.num_classes if self.num_classes > 2 else 1
+                logits = unet._create_conv_relu(conv_logits, "new_logits", classes, 0,
+                                                is_training=self.is_train)
+
+                self.outputs = (logits, angle_pred)
+                self.priors = last_relu
+                tf.get_variable_scope().reuse_variables()
+
+            self.saver = tf.train.Saver(tf.global_variables())
+            self.sess = tf.Session(config=tf.ConfigProto(allow_soft_placement=True))
+            checkpoint_nb = func.find_last_checkpoint(checkpoint_dir)
+            checkpoint_file = os.path.join(checkpoint_dir, "model_%06d.ckpt" % checkpoint_nb)
+            print("Restoring checkpoint %i.." % checkpoint_nb, flush=True)
+            self.saver.restore(self.sess, checkpoint_file)
+            init = tf.local_variables_initializer()
+            self.sess.run(init)
 
 ######## MAIN FUNCTION ##############
 
-def find_detections(checkpoint_dir=os.path.join(CHECKPOINT_DIR, "unet2"), img_dir=IMG_DIR, pos_dir=POS_DIR, overwrite=False):
+def find_detections(checkpoint_dir=os.path.join(CHECKPOINT_DIR, "unet2"), img_dir=IMG_DIR, pos_dir=POS_DIR, overwrite=False,
+                    det_model_class=DetectionInference):
     '''
     Run inferrence and write position detections for sequence of frames.
 
@@ -182,6 +225,8 @@ def find_detections(checkpoint_dir=os.path.join(CHECKPOINT_DIR, "unet2"), img_di
     :param img_dir: directory storing sequence of frames.
     :param pos_dir: output directory to store detections.
     :param overwrite: whether to overwrite positions in directory.
+    :param det_model_class: which model class to use to load model from checkpoint.
+           DetectionInference to load original model checkpoint, FinetunedDetectionInference to load finetuned model.
     '''
     # Don't overwrite previous detections.
     if not overwrite and os.path.exists(pos_dir) and len(os.listdir(pos_dir))!=0:
@@ -198,7 +243,7 @@ def find_detections(checkpoint_dir=os.path.join(CHECKPOINT_DIR, "unet2"), img_di
     offsets = generate_offsets_for_frame(img_shape)
     print('frame shape:', img_shape)
 
-    with DetectionInference() as model_obj:
+    with det_model_class() as model_obj:
         model_obj.build_model(checkpoint_dir)
         model_obj.start_workers(num_fls, pos_dir)
         try:

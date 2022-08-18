@@ -10,6 +10,9 @@ from utils.paths import DET_DATA_DIR, CHECKPOINT_DIR
 from utils.func import DS, GPU_NAME, NUM_LAYERS, NUM_FILTERS, CLASSES
 
 class FinetuneModel(train_detection.TrainModel):
+    '''
+    Loads graph from saved .meta file, without recreating graph. Then adds on finetuneable layers.
+    '''
 
     def __init__(self, data_path, train_prop, with_augmentation, dropout_ratio=0, learning_rate=train_detection.BASE_LR,
                  loss_upweight=10, set_random_seed=False, num_classes=3, continue_finetuning_from_saved_checkpoint=False):

@@ -39,7 +39,7 @@ def ellipse_around_point(xc, yc, a, h, w, r1, r2):
     return m
 
 
-def generate_segm_labels(img, pos, w=10, r1=7, r2=12):
+def generate_segm_labels(img, pos, r1=7, r2=12):
     '''
     Generates segmentation labels given an image and np array of positions.
 
@@ -55,7 +55,7 @@ def generate_segm_labels(img, pos, w=10, r1=7, r2=12):
       0. data: original image pixels
       1. class: 0 for background, 1 for full bee, 2 for cell bee
       2. angle: radians/2pi if full bee, 1 if cell bee, -1 if background
-      3. weight: 1 for background, scaled 2D Gaussian distribution centered as bee center
+      3. weight: 0 for background, scaled 2D Gaussian distribution centered as bee center
     '''
     FR_H, FR_W = img.shape
     res = np.zeros((4, FR_H, FR_W), dtype=np.float32) # data,labels_segm, labels_angle, weight
@@ -81,7 +81,7 @@ def generate_segm_labels(img, pos, w=10, r1=7, r2=12):
         res[2][mask] = a / (2*math.pi)
         res[3][mask] = m[mask]
 
-    res[3] = res[3]*(w - 1) + 1
+    # res[3] = res[3] * (w - 1) + 1
     return res
 
 '''

@@ -48,6 +48,9 @@ class FinetuneModel(train_detection.TrainModel):
         tf_dev = gpu if gpu != "" else cpu
 
         with tf.Graph().as_default() as graph, tf.device(cpu):
+            if self.set_random_seed:
+                tf.set_random_seed(train_detection.SEED)
+
             checkpoint = func.find_last_checkpoint(checkpoint_dir)
             print("Restoring checkpoint %i.." % checkpoint, flush=True)
             self.sess = tf.Session(config=tf.ConfigProto(allow_soft_placement=True))

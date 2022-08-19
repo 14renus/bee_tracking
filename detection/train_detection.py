@@ -15,7 +15,7 @@ from plots import segm_map
 
 BATCH_SIZE = 4
 BASE_LR = 0.0001
-
+SEED = 0
 
 tf.logging.set_verbosity(tf.logging.ERROR)
 
@@ -49,7 +49,8 @@ class TrainModel:
         self.input_files = [f for f in os.listdir(data_path) if re.search('npz', f)]
         self.set_random_seed = set_random_seed
         if self.set_random_seed:
-          seed(0)
+          seed(SEED)
+          np.random.seed(SEED)
         else:
           shuffle(self.input_files)
         self.train_prop = train_prop
@@ -86,6 +87,9 @@ class TrainModel:
         tf_dev = gpu if gpu != "" else cpu
 
         with tf.Graph().as_default(), tf.device(cpu):
+            if self.set_random_seed:
+                tf.set_random_seed(SEED)
+
             global_step = tf.get_variable('global_step', [], initializer=tf.constant_initializer(0), trainable=False)
 
             opt = tf.train.AdamOptimizer(learning_rate=self.learning_rate)

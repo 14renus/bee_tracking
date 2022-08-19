@@ -25,7 +25,7 @@ def _create_conv_relu(inputs, name, filters, dropout_ratio, is_training, strides
         if random_seed > 0:
             net = tf.layers.dropout(inputs=net, rate=dropout_ratio, seed=random_seed, training=is_training, name="%s_dropout" % name)
         else:
-            net = tf.layers.dropout(inputs=net, rate=dropout_ratio, seed=random_seed, training=is_training, name="%s_dropout" % name)
+            net = tf.layers.dropout(inputs=net, rate=dropout_ratio, training=is_training, name="%s_dropout" % name)
     net = tf.layers.batch_normalization(net, center=True, scale=False, training=is_training, name="%s_bn" % name)
     if relu:
         net = tf.nn.relu(net) # leaky relu

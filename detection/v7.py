@@ -184,7 +184,7 @@ def save_labelled_video(video_filename, output_dir, fps=60, pos_dir=paths.POS_DI
     writer = cv2.VideoWriter(path_save, fourcc, fps, img_shape)
 
     for frame in frame_files:
-      img = plot.plot_detections(frame_path=frame, save=False, img_dir=img_dir, pos_dir=os.path.join(pos_dir,video_name), fps=60)
+      img = plot.plot_detections(frame_path=frame, save=False, img_dir=img_dir, pos_dir=os.path.join(pos_dir,video_name), fps=fps)
       img = img.convert("RGB") # Remove 4th layer (transparencny) that is used by some formats like .png
       writer.write(cv2.cvtColor(np.array(img).astype('uint8'), cv2.COLOR_RGB2BGR))
 
@@ -192,11 +192,11 @@ def save_labelled_video(video_filename, output_dir, fps=60, pos_dir=paths.POS_DI
 
 ######## MAIN FUNCTION ##############
 
-def import_annotations_and_generate_frames(v7_annotations_file, video_dir, pos_dir=paths.POS_DIR, img_dir=paths.IMG_DIR, crop_w=FR_D, crop_h=FR_D, class_mapping={'dancing_bee':0}, allowed_instance_ids_for_cropping_spec=None, frames_range_to_generate=None, labelled_video_dir=None):
+def import_annotations_and_generate_frames(v7_annotations_file, video_dir, pos_dir=paths.POS_DIR, img_dir=paths.IMG_DIR, crop_w=FR_D, crop_h=FR_D, class_mapping={'dancing_bee':0}, allowed_instance_ids_for_cropping_spec=None, frames_range_to_generate=None, labelled_video_dir=None, fps=50):
   cropping_spec = find_cropping_spec(v7_annotations_file, crop_w, crop_h, allowed_instance_ids=allowed_instance_ids_for_cropping_spec)
   video_filename = import_annotations(v7_annotations_file, pos_dir, class_mapping, cropping_spec)
   video_path = os.path.join(video_dir,video_filename)
   create_frames_from_video(video_path, img_dir=img_dir, frame_range=frames_range_to_generate, cropping_spec=cropping_spec)
   if labelled_video_dir:
-      save_labelled_video(video_filename, labelled_video_dir, fps=60, pos_dir=pos_dir, img_dir=img_dir)
+      save_labelled_video(video_filename, labelled_video_dir, fps=fps, pos_dir=pos_dir, img_dir=img_dir)
   return cropping_spec

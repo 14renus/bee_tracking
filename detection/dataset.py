@@ -93,6 +93,7 @@ The 4 "channels" for each frame are: normalized image, class labels, angle label
 
 Params
   frame_nbs: list of frame numbers, corresponding to names of the image files in the format '00000<n>.png'.
+     If None, reads all .png files in img_dir.
   img_dir: directory holding .png files. 
      Images should be all of the same dimension, where dimension height and width are divisible by 256.
   pos_dir: directory holding .txt files with the same frame number format.
@@ -100,7 +101,7 @@ Params
      x and y are measured from the top left corner, which represents (0, 0).
   out_dir: directory to store the .npz file with labels for all frames.
 '''
-def create_from_frames(frame_nbs, img_dir, pos_dir, out_dir=paths.DET_DATA_DIR):
+def create_from_frames(frame_nbs, img_dir, pos_dir, out_dir=paths.DET_DATA_DIR, out_file_name=None):
     if not os.path.exists(out_dir):
         os.mkdir(out_dir)
     files = [f for f in os.listdir(out_dir) if re.search('npz', f)]
@@ -108,6 +109,9 @@ def create_from_frames(frame_nbs, img_dir, pos_dir, out_dir=paths.DET_DATA_DIR):
     # Check shape of first frame.
     img_shape = func.read_img(0, img_dir).shape
     func.check_img_shape(img_shape)
+
+    if frame_nbs is None:
+        frame_nbs = [int(f.replace('.png','')) for f in os.listdir(img_dir) if re.search('.png', f)]
     
     res = np.zeros((len(frame_nbs), 4, img_shape[0], img_shape[1]), dtype=np.float32)
     for i, frame_nb in enumerate(frame_nbs):
@@ -123,5 +127,9 @@ def create_from_frames(frame_nbs, img_dir, pos_dir, out_dir=paths.DET_DATA_DIR):
           print('\n',e)
           pos = np.array([])
         res[i] = generate_segm_labels(img, pos)
-    np.savez(os.path.join(out_dir, "%06d.npz" % fl_nb), data=res, det=pos)
+    if out_file_name is None:
+        out_file_name = ("%06d.npz" % fl_nb)
+    else:
+        out_file_name = out_file_name + '.npz'
+    np.savez(os.path.join(out_dir, out_file_name), data=res, det=pos)
 

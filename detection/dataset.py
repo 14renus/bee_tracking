@@ -106,13 +106,14 @@ def create_from_frames(frame_nbs, img_dir, pos_dir, out_dir=paths.DET_DATA_DIR, 
         os.mkdir(out_dir)
     files = [f for f in os.listdir(out_dir) if re.search('npz', f)]
     fl_nb = len(files)
-    # Check shape of first frame.
-    img_shape = func.read_img(0, img_dir).shape
-    func.check_img_shape(img_shape)
 
     if frame_nbs is None:
         frame_nbs = [int(f.replace('.png','')) for f in os.listdir(img_dir) if re.search('.png', f)]
-    
+
+    # Check shape of first frame.
+    img_shape = func.read_img(frame_nbs[0], img_dir).shape
+    func.check_img_shape(img_shape)
+
     res = np.zeros((len(frame_nbs), 4, img_shape[0], img_shape[1]), dtype=np.float32)
     for i, frame_nb in enumerate(frame_nbs):
         print("frame %i.." % frame_nb, end='')

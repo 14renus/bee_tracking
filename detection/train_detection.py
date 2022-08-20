@@ -149,7 +149,7 @@ class TrainModel:
                  - bg: "background overlap" = (correct class = 0 and angle < 0) / # background pixels
                  - fg: "foreground overlap" = (correct class !=0) / # foreground pixels
                  Just for foreground pixels:
-                 - fg_error: "class error" = correct class / # foreground pixels
+                 - fg_error: "class error" = incorrect class / # foreground pixels
                  - angle_error: "angle error" = mean difference in angle
         '''
         batch_data = batch_data[:, step, :, :, :]

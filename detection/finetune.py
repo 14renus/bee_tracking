@@ -89,13 +89,15 @@ class FinetuneModel(train_detection.TrainModel):
             else:
                 self.train_op = graph.get_operation_by_name("train_op")
 
+            # Reinit with all global variables, including newly added layers.
+            self.saver = tf.train.Saver(tf.global_variables())
+
             # Init added variables only, not variables loaded from checkpoint.
             global_vars = tf.global_variables()
             is_not_initialized = self.sess.run([tf.is_variable_initialized(var) for var in global_vars])
             not_initialized_vars = [v for (v, f) in zip(global_vars, is_not_initialized) if not f]
             if len(not_initialized_vars):
                 self.sess.run(tf.variables_initializer(not_initialized_vars))
-
         return checkpoint
 
 

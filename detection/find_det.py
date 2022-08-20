@@ -174,7 +174,7 @@ class DetectionInference:
 class FinetunedDetectionInference(DetectionInference):
 
     def __init__(self, num_classes=2):
-        super(DetectionInference, self).__init__()
+        super().__init__()
         self.num_classes = num_classes
 
     def build_model(self, checkpoint_dir):
@@ -189,11 +189,11 @@ class FinetunedDetectionInference(DetectionInference):
                 self.placeholder_img = tf.placeholder(tf.float32, shape=(BATCH_SIZE, DS, DS, 1), name="images")
                 self.placeholder_prior = tf.placeholder(tf.float32, shape=(BATCH_SIZE, DS, DS, NUM_FILTERS),
                                                         name="prior")
-                # Add finetuned layer.
+                # Original unet.
                 logits, last_relu, angle_pred = unet.create_unet2(NUM_LAYERS, NUM_FILTERS, self.placeholder_img,
                                                                   self.is_train, prev=self.placeholder_prior,
                                                                   num_classes=CLASSES)
-
+                # Add finetuned layer.
                 conv_logits = unet._create_conv_relu(last_relu, "new_conv_logits", NUM_FILTERS,
                                                      dropout_ratio=0,
                                                      is_training=self.is_train)

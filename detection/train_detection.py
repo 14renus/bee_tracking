@@ -135,6 +135,23 @@ class TrainModel:
 
 
     def _accuracy(self, step, loss, logits, angle_preds, batch_data):
+        '''
+        Calculate metrics for train or test step.
+
+        :param step: Frame step in batch_data to use as labels.
+        :param loss: cross entropy + regression angle loss already calculated from tf model.
+        :param logits: Raw class preds before softmax
+        :param angle_preds: Regression preds for angle
+        :param batch_data: Full data [BATCHSIZE, nb_frames, 4, DS, DS]
+        :return: Tuple of metrics
+                 - Boolean to indicate train (0) or test (1)
+                 - loss: passed from model
+                 - bg: "background overlap" = (correct class = 0 and angle < 0) / # background pixels
+                 - fg: "foreground overlap" = (correct class !=0) / # foreground pixels
+                 Just for foreground pixels:
+                 - fg_error: "class error" = correct class / # foreground pixels
+                 - angle_error: "angle error" = mean difference in angle
+        '''
         batch_data = batch_data[:, step, :, :, :]
 
         pred_class = np.argmax(logits, axis=3)
@@ -187,12 +204,12 @@ class TrainModel:
                 self.placeholder_prior: last_relus, self.is_train: is_train}
 
 
-    def run_test(self, batch_data, last_step, last_relus, return_img):
+    def run_test(self, batch_data, start_step, last_relus, return_img):
         t1 = time.time()
 
         res_img = []
         accuracy_t = np.zeros((6))
-        for step in range(last_step, batch_data.shape[1]):
+        for step in range(start_step, batch_data.shape[1]):
             outs = self.sess.run(self.outputs, feed_dict=self._input_batch(step, batch_data, last_relus, False))
             last_relus = outs[2]
             accuracy_t += self._accuracy(step, outs[1], outs[0], outs[3], batch_data)
@@ -202,7 +219,7 @@ class TrainModel:
                     im_angle = segm_map.plot_angle_map_np(batch_data[i,step,0,:,:], outs[3][i])
                     res_img.append((im_segm, im_angle))
 
-        accuracy_t = accuracy_t / (batch_data.shape[1] - last_step)
+        accuracy_t = accuracy_t / (batch_data.shape[1] - start_step)
         accuracy_t[0] = 1
         print("TEST - time: %.3f min, loss: %.3f, background overlap: %.3f, foreground overlap: %.3f, class error: %.3f, angle error: %.3f" % ((time.time() - t1) / 60, accuracy_t[1], accuracy_t[2], accuracy_t[3], accuracy_t[4], accuracy_t[5]), flush=True)
         with open(self.acc_file, 'a') as f:
@@ -239,7 +256,7 @@ class TrainModel:
             np.savetxt(f, np.reshape(accuracy_t, (1,-1)), fmt='%.5f', delimiter=',', newline='\n')
 
         img = []
-        if step < data.shape[0]:
+        if train_steps < batch_data.shape[1]:
             img = self.run_test(batch_data, train_steps, last_relus, return_img)
         return img
 

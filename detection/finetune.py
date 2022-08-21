@@ -15,25 +15,14 @@ class FinetuneModel(train_detection.TrainModel):
     '''
 
     def __init__(self, data_path, train_prop, with_augmentation, dropout_ratio=0, learning_rate=train_detection.BASE_LR,
-                 loss_upweight=10, set_random_seed=False, num_classes=3, continue_finetuning_from_saved_checkpoint=False):
+                 loss_upweight=10, set_random_seed=False, num_classes=3, continue_finetuning_from_checkpoint=False):
         super(FinetuneModel, self).__init__(data_path, train_prop, with_augmentation,
                                             dropout_ratio, learning_rate, loss_upweight, set_random_seed, num_classes)
-        self.add_finetune_nodes = not continue_finetuning_from_saved_checkpoint
+        self.continue_finetuning = continue_finetuning_from_checkpoint
 
 
-    def _loss(self, img, label, weight, angle_label, prior, graph, scope):
-        last_relu = graph.get_tensor_by_name(scope + "Relu_13:0")
-        angle_pred = graph.get_tensor_by_name(scope + "angle_pred_bn/cond/Merge:0")
-
-        if self.add_finetune_nodes:
-            conv_logits = unet._create_conv_relu(last_relu, "new_conv_logits", NUM_FILTERS,
-                                                 dropout_ratio=self.dropout_ratio,
-                                                 is_training=self.is_train)
-            classes = self.num_classes if self.num_classes > 2 else 1
-            logits = unet._create_conv_relu(conv_logits, "new_logits", classes, self.dropout_ratio,
-                                            is_training=self.is_train)
-        else:
-            logits = graph.get_tensor_by_name(scope + "Relu_17:0")
+    def _loss(self, logits, label, weight, angle_pred, angle_label, prior):
+        last_relu = prior
 
         loss_softmax = unet.loss(logits, label, weight, self.num_classes)
         loss_angle = unet.angle_loss(angle_pred, angle_label, weight)
@@ -51,46 +40,59 @@ class FinetuneModel(train_detection.TrainModel):
             if self.set_random_seed:
                 tf.set_random_seed(train_detection.SEED)
 
+            global_step = tf.get_variable('global_step', [], initializer=tf.constant_initializer(0), trainable=False)
+
+            opt = tf.train.AdamOptimizer(learning_rate=train_detection.BASE_LR)
+            self.is_train = tf.placeholder(tf.bool, shape=[])
+            self.placeholder_img = tf.placeholder(tf.float32, shape=(None, DS, DS, 1), name="images")
+            self.placeholder_label = tf.placeholder(tf.uint8, shape=(None, DS, DS), name="labels")
+            self.placeholder_weight = tf.placeholder(tf.float32, shape=(None, DS, DS), name="weight")
+            self.placeholder_angle_label = tf.placeholder(tf.float32, shape=(None, DS, DS), name="angle_labels")
+            self.placeholder_prior = tf.placeholder(tf.float32, shape=(None, DS, DS, NUM_FILTERS), name="prior")
+
+            with tf.device(tf_dev), tf.name_scope('%s_%d' % (GPU_NAME, 0)):
+                # Create original network.
+                logits, last_relu, angle_pred = unet.create_unet2(NUM_LAYERS, NUM_FILTERS, self.placeholder_img,
+                                                                  self.is_train, prev=self.placeholder_prior,
+                                                                  num_classes=CLASSES)
+
+            if not self.continue_finetuning:
+                self.saver = tf.train.Saver(tf.global_variables())
+                self.sess = tf.Session(config=tf.ConfigProto(allow_soft_placement=True))
+
+            # Add new finetuned layer.
+            with tf.device(tf_dev), tf.name_scope('%s_%d' % (GPU_NAME, 0)) as scope:
+                conv_logits = unet._create_conv_relu(last_relu, "new_conv_logits", NUM_FILTERS,
+                                                     dropout_ratio=0,
+                                                     is_training=self.is_train)
+                classes = self.num_classes if self.num_classes > 2 else 1
+                logits = unet._create_conv_relu(conv_logits, "new_logits", classes, 0,
+                                                is_training=self.is_train)
+                logits, loss, last_relu, angle_pred = self._loss(logits, self.placeholder_label, self.placeholder_weight,
+                                                                 angle_pred, self.placeholder_angle_label, last_relu)
+                self.outputs = (logits, loss, last_relu, angle_pred)
+
+                update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
+                grads = opt.compute_gradients(loss)
+
+            apply_gradient_op = opt.apply_gradients(grads, global_step=global_step)
+            variable_averages = tf.train.ExponentialMovingAverage(func.MOVING_AVERAGE_DECAY, global_step)
+            variables_averages_op = variable_averages.apply(tf.trainable_variables())
+            batchnorm_updates_op = tf.group(*update_ops)
+            self.train_op = tf.group(apply_gradient_op, variables_averages_op, batchnorm_updates_op)
+
+            if self.continue_finetuning:
+                self.saver = tf.train.Saver(tf.global_variables())
+                self.sess = tf.Session(config=tf.ConfigProto(allow_soft_placement=True))
+
             checkpoint = func.find_last_checkpoint(checkpoint_dir)
             print("Restoring checkpoint %i.." % checkpoint, flush=True)
-            self.sess = tf.Session(config=tf.ConfigProto(allow_soft_placement=True))
-            self.saver = tf.train.import_meta_graph(os.path.join(checkpoint_dir, 'model_%06d.ckpt.meta' % checkpoint))
             self.saver.restore(self.sess, os.path.join(checkpoint_dir, 'model_%06d.ckpt' % checkpoint))
             checkpoint += 1
 
-            self.is_train = graph.get_tensor_by_name("Placeholder:0")
-            self.placeholder_img = graph.get_tensor_by_name("images:0")
-            self.placeholder_label = graph.get_tensor_by_name("labels:0")
-            self.placeholder_weight = graph.get_tensor_by_name("weight:0")
-            self.placeholder_angle_label = graph.get_tensor_by_name("angle_labels:0")
-            self.placeholder_prior = graph.get_tensor_by_name("prior:0")
-
-            # Load saved global_step.
-            global_step = tf.get_variable('global_step', [], initializer=tf.constant_initializer(0), trainable=False)
-            # New adam optimizer.
-            if self.add_finetune_nodes:
-              opt = tf.train.AdamOptimizer(learning_rate=train_detection.BASE_LR, name='MyNewAdam')
-
-            with tf.device(tf_dev), tf.name_scope('%s_%d' % (GPU_NAME, 0)) as scope:
-                logits, loss, last_relu, angle_pred = self._loss(self.placeholder_img, self.placeholder_label,
-                                                                 self.placeholder_weight, self.placeholder_angle_label,
-                                                                 self.placeholder_prior, graph, scope)
-                self.outputs = (logits, loss, last_relu, angle_pred)
-                if self.add_finetune_nodes:
-                    update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
-                    grads = opt.compute_gradients(loss)
-
-            if self.add_finetune_nodes:
-                apply_gradient_op = opt.apply_gradients(grads, global_step=global_step)
-                variable_averages = tf.train.ExponentialMovingAverage(func.MOVING_AVERAGE_DECAY, global_step, name='MyNewExponentialMovingAverage')
-                variables_averages_op = variable_averages.apply(tf.trainable_variables())
-                batchnorm_updates_op = tf.group(*update_ops)
-                self.train_op = tf.group(apply_gradient_op, variables_averages_op, batchnorm_updates_op, name='train_op')
-            else:
-                self.train_op = graph.get_operation_by_name("train_op")
-
-            # Reinit with all global variables, including newly added layers.
+            # (Re)init saver to include added global variables, session to include full graph.
             self.saver = tf.train.Saver(tf.global_variables())
+            self.sess = tf.Session(config=tf.ConfigProto(allow_soft_placement=True))
 
             # Init added variables only, not variables loaded from checkpoint.
             global_vars = tf.global_variables()
@@ -98,6 +100,7 @@ class FinetuneModel(train_detection.TrainModel):
             not_initialized_vars = [v for (v, f) in zip(global_vars, is_not_initialized) if not f]
             if len(not_initialized_vars):
                 self.sess.run(tf.variables_initializer(not_initialized_vars))
+            self.sess.run(tf.local_variables_initializer())
         return checkpoint
 
 

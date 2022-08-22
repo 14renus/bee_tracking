@@ -25,7 +25,7 @@ class FinetuneModel(train_detection.TrainModel):
         last_relu = prior
 
         loss_softmax = unet.loss(logits, label, weight, self.num_classes)
-        loss_angle = unet.angle_loss(angle_pred, angle_label, weight)
+        loss_angle = unet.angle_loss(angle_pred, angle_label, weight, ignore_bg=True, use_weights=False)
 
         total_loss = loss_softmax + loss_angle #tf.add_n(losses, name='total_loss')
         return logits, total_loss, last_relu, angle_pred, loss_softmax, loss_angle

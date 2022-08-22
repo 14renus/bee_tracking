@@ -163,7 +163,8 @@ class TrainModel:
         is_fg = np.logical_not(is_bg)
         n_fg = np.sum(is_fg)
         # Background accuracy. Correct if pred class 0 and angle < 0.
-        bg = float(np.sum((pred_class[is_bg] == 0) & (pred_angle[is_bg] < 0)))/np.sum(is_bg)
+        # bg = float(np.sum((pred_class[is_bg] == 0) & (pred_angle[is_bg] < 0)))/np.sum(is_bg)
+        bg = float(np.sum(pred_class[is_bg] == 0))/np.sum(is_bg)
         fg = 0
         fg_err = np.max(lb)
         angle_err = 0

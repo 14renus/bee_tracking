@@ -145,12 +145,13 @@ def loss(logits, labels, weight_map, num_classes=3):
     return loss #tf.add_n(tf.get_collection('losses'), name='total_loss')
 
 
-def angle_loss(angle_pred, angle_labels, weight_map):
+def angle_loss(angle_pred, angle_labels, weight_map, ignore_bg=False, use_weights=True):
     '''
 
     :param angle_pred: model output
     :param angle_labels: radians/2pi if full bee, 1 if cell bee, -1 if background
     :param weight_map: same dimension as the predictions, weight to apply to each pixel prediction.
+    :param ignore_bg: ignore background loss when computing angle_loss
     :return: sum of foreground and background loss, which are weighted averages of:
       foreground: mean squared error (regression loss)
       background: angle loss = sin^2 of the difference of angle pred and label.
@@ -159,24 +160,31 @@ def angle_loss(angle_pred, angle_labels, weight_map):
     sh = tf.shape(angle_pred)
     angle_pred = tf.reshape(angle_pred, [sh[0],sh[1],sh[2]])  # [BATCH_SIZE, DS, DS]
     # Masks on pixels for background and foreground.
-    bg_mask = tf.logical_or(tf.less(angle_pred, 0), tf.less(angle_labels, 0))
+    if ignore_bg:
+        bg_mask = tf.less(angle_labels, 0)
+    else:
+        bg_mask = tf.logical_or(tf.less(angle_pred, 0), tf.less(angle_labels, 0))
     fg_mask = tf.logical_not(bg_mask)
 
     num_bg, num_fg = tf.reduce_sum(tf.cast(bg_mask,dtype=tf.uint8)), tf.reduce_sum(tf.cast(fg_mask,dtype=tf.uint8))
 
-    fg_loss = tf.multiply(tf.boolean_mask(weight_map, fg_mask),
-                          tf.square(tf.sin((tf.boolean_mask(angle_pred, fg_mask) - tf.boolean_mask(angle_labels,
-                                                                                                   fg_mask)) * math.pi)))
-    bg_loss = tf.multiply(tf.boolean_mask(weight_map, bg_mask),
-                          tf.square(tf.boolean_mask(angle_pred, bg_mask) - tf.boolean_mask(angle_labels, bg_mask)))
+    fg_loss = tf.square(tf.sin((tf.boolean_mask(angle_pred, fg_mask) - tf.boolean_mask(angle_labels, fg_mask)) * math.pi))
+    bg_loss = tf.square(tf.boolean_mask(angle_pred, bg_mask) - tf.boolean_mask(angle_labels, bg_mask))
 
-    bg_loss = tf.reduce_mean(bg_loss, name="weighted_bg_angle_loss")
-    fg_loss = tf.reduce_mean(fg_loss, name="weighted_angle_loss")
+    if use_weights:
+        fg_loss = tf.multiply(tf.boolean_mask(weight_map, fg_mask), fg_loss)
+        bg_loss = tf.multiply(tf.boolean_mask(weight_map, bg_mask), bg_loss)
+
+    bg_loss = tf.reduce_mean(bg_loss, name="bg_angle_loss")
+    fg_loss = tf.reduce_mean(fg_loss, name="fg_angle_loss")
 
     # Avoid nan if no bg or fg pixels to compute loss over.
     bg_loss = tf.cond(num_bg > 0, lambda: bg_loss, lambda: 0.)
     fg_loss = tf.cond(num_fg > 0, lambda: fg_loss, lambda: 0.)
 
-    loss = fg_loss + bg_loss
+    if ignore_bg:
+        loss = fg_loss
+    else:
+        loss = fg_loss + bg_loss
     #tf.add_to_collection('losses', loss)
     return loss #tf.add_n(tf.get_collection('losses'), name='total_loss')

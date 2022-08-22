@@ -28,7 +28,7 @@ class FinetuneModel(train_detection.TrainModel):
         loss_angle = unet.angle_loss(angle_pred, angle_label, weight)
 
         total_loss = loss_softmax + loss_angle #tf.add_n(losses, name='total_loss')
-        return logits, total_loss, last_relu, angle_pred
+        return logits, total_loss, last_relu, angle_pred, loss_softmax, loss_angle
 
     def build_model(self, checkpoint_dir):
         self.checkpoint_dir = checkpoint_dir
@@ -68,12 +68,12 @@ class FinetuneModel(train_detection.TrainModel):
                 classes = self.num_classes if self.num_classes > 2 else 1
                 logits = unet._create_conv_relu(conv_logits, "new_logits", classes, 0,
                                                 is_training=self.is_train)
-                logits, loss, last_relu, angle_pred = self._loss(logits, self.placeholder_label, self.placeholder_weight,
+                logits, total_loss, last_relu, angle_pred, loss_softmax, loss_angle = self._loss(logits, self.placeholder_label, self.placeholder_weight,
                                                                  angle_pred, self.placeholder_angle_label, last_relu)
-                self.outputs = (logits, loss, last_relu, angle_pred)
+                self.outputs = (logits, total_loss, last_relu, angle_pred, loss_softmax, loss_angle)
 
                 update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
-                grads = opt.compute_gradients(loss)
+                grads = opt.compute_gradients(total_loss)
 
             apply_gradient_op = opt.apply_gradients(grads, global_step=global_step)
             variable_averages = tf.train.ExponentialMovingAverage(func.MOVING_AVERAGE_DECAY, global_step)

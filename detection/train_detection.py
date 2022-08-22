@@ -79,7 +79,7 @@ class TrainModel:
         loss_angle = unet.angle_loss(angle_pred, angle_label, weight)
 
         total_loss = loss_softmax + loss_angle #tf.add_n(losses, name='total_loss')
-        return logits, total_loss, last_relu, angle_pred
+        return logits, total_loss, last_relu, angle_pred, loss_softmax, loss_angle
 
     def build_model(self, checkpoint_dir):
         self.checkpoint_dir = checkpoint_dir
@@ -101,12 +101,12 @@ class TrainModel:
             self.placeholder_prior = tf.placeholder(tf.float32, shape=(None, DS, DS, NUM_FILTERS), name="prior")
 
             with tf.device(tf_dev), tf.name_scope('%s_%d' % (GPU_NAME, 0)) as scope:
-                logits, loss, last_relu, angle_pred = self._loss(self.placeholder_img, self.placeholder_label,
+                logits, total_loss, last_relu, angle_pred,loss_softmax, loss_angle = self._loss(self.placeholder_img, self.placeholder_label,
                                                                  self.placeholder_weight, self.placeholder_angle_label,
                                                                  self.placeholder_prior)
-                self.outputs = (logits, loss, last_relu, angle_pred)
+                self.outputs = (logits, total_loss, last_relu, angle_pred, loss_softmax, loss_angle)
                 update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
-                grads = opt.compute_gradients(loss)
+                grads = opt.compute_gradients(total_loss)
 
             #grads = self._average_gradients(grads)
             apply_gradient_op = opt.apply_gradients(grads, global_step=global_step)
@@ -134,7 +134,7 @@ class TrainModel:
         return checkpoint
 
 
-    def _accuracy(self, step, loss, logits, angle_preds, batch_data):
+    def _accuracy(self, step, loss, logits, angle_preds, batch_data, loss_softmax, loss_angle):
         '''
         Calculate metrics for train or test step.
 
@@ -174,7 +174,7 @@ class TrainModel:
             fg_err = np.mean(lb[is_fg] != pred_class[is_fg])
             # Foreground angle error. Abs difference in angle pred and label
             angle_err = np.mean(np.abs(pred_angle[is_fg] - angle[is_fg]))
-        return np.array([0, loss, bg, fg, fg_err, angle_err])
+        return np.array([0, loss, bg, fg, fg_err, angle_err, loss_softmax, loss_angle])
 
     def _sample_offsets(self, data):
         '''
@@ -208,11 +208,11 @@ class TrainModel:
         t1 = time.time()
 
         res_img = []
-        accuracy_t = np.zeros((6))
+        accuracy_t = np.zeros((8))
         for step in range(start_step, batch_data.shape[1]):
             outs = self.sess.run(self.outputs, feed_dict=self._input_batch(step, batch_data, last_relus, False))
             last_relus = outs[2]
-            accuracy_t += self._accuracy(step, outs[1], outs[0], outs[3], batch_data)
+            accuracy_t += self._accuracy(step, outs[1], outs[0], outs[3], batch_data, outs[4], outs[5])
             if (step == (batch_data.shape[1]-1)) and return_img:
                 for i in range(BATCH_SIZE):
                     im_segm = segm_map.plot_segm_map_np(batch_data[i, step, 0, :, :], np.argmax(outs[0][i], axis=2))
@@ -221,7 +221,7 @@ class TrainModel:
 
         accuracy_t = accuracy_t / (batch_data.shape[1] - start_step)
         accuracy_t[0] = 1
-        print("TEST - time: %.3f min, loss: %.3f, background overlap: %.3f, foreground overlap: %.3f, class error: %.3f, angle error: %.3f" % ((time.time() - t1) / 60, accuracy_t[1], accuracy_t[2], accuracy_t[3], accuracy_t[4], accuracy_t[5]), flush=True)
+        print("TEST - time: %.3f min, loss: %.3f, class loss: %.3f, angle loss: %.3f, background overlap: %.3f, foreground overlap: %.3f, class error: %.3f, angle error: %.3f" % ((time.time() - t1) / 60, accuracy_t[1], accuracy_t[6],accuracy_t[7],accuracy_t[2], accuracy_t[3], accuracy_t[4], accuracy_t[5]), flush=True)
         with open(self.acc_file, 'a') as f:
             np.savetxt(f, np.reshape(accuracy_t, (1,-1)), fmt='%.5f', delimiter=',', newline='\n')
         return res_img
@@ -242,16 +242,16 @@ class TrainModel:
         train_steps = int(data.shape[0]*self.train_prop) # Number of sequential frames to train on.
         batch_data, last_relus = self._sample_offsets(data)
 
-        accuracy_t = np.zeros((6))
+        accuracy_t = np.zeros((8))
         for step in range(train_steps):
             _, outs = self.sess.run([self.train_op, self.outputs],
                                     feed_dict=self._input_batch(step, batch_data, last_relus, True))
             last_relus = outs[2]
-            accuracy_t += self._accuracy(step, outs[1], outs[0], outs[3], batch_data)
+            accuracy_t += self._accuracy(step, outs[1], outs[0], outs[3], batch_data, outs[4], outs[5])
 
         accuracy_t = accuracy_t / train_steps
         accuracy_t[0] = 0
-        print("TRAIN - time: %.3f min, loss: %.3f, background overlap: %.3f, foreground overlap: %.3f, class error: %.3f, angle error: %.3f" % ((time.time() - t1) / 60, accuracy_t[1], accuracy_t[2], accuracy_t[3], accuracy_t[4], accuracy_t[5]), flush=True)
+        print("TRAIN - time: %.3f min, loss: %.3f, class loss: %.3f, angle loss: %.3f, background overlap: %.3f, foreground overlap: %.3f, class error: %.3f, angle error: %.3f" % ((time.time() - t1) / 60, accuracy_t[1], accuracy_t[6],accuracy_t[7], accuracy_t[2], accuracy_t[3], accuracy_t[4], accuracy_t[5]), flush=True)
         with open(self.acc_file, 'a') as f:
             np.savetxt(f, np.reshape(accuracy_t, (1,-1)), fmt='%.5f', delimiter=',', newline='\n')
 

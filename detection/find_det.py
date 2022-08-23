@@ -12,7 +12,7 @@ import shutil
 import itertools
 import multiprocessing
 from utils.paths import DATA_DIR, IMG_DIR, POS_DIR, TMP_DIR, CHECKPOINT_DIR
-from utils.func import DS, GPU_NAME, NUM_LAYERS, NUM_FILTERS, CLASSES
+from utils.func import DS, GPU_NAME, NUM_LAYERS, NUM_FILTERS, CLASSES, clipped_sigmoid
 from utils import func
 
 N_PROC = 3
@@ -68,7 +68,8 @@ def save_output_worker(total_frames, output_dir):
 
 class DetectionInference:
 
-    def __init__(self):
+    def __init__(self, num_classes=CLASSES):
+        self.num_classes = num_classes
         self.batch_data = np.zeros((BATCH_SIZE, DS, DS, 1), dtype=np.float32)
 
     def __enter__(self):
@@ -147,7 +148,10 @@ class DetectionInference:
             p.join()
 
     def _save_output(self, outs, output_i):
-        log_res = np.argmax(outs[0], axis=3)
+        if self.num_classes > 2:
+            log_res = np.argmax(outs[0], axis=3)
+        else:
+            log_res = np.round(clipped_sigmoid(outs[0].squeeze()))
         angle_res = outs[1][:, :, :, 0]
         res = np.append(np.expand_dims(log_res, axis=1), np.expand_dims(angle_res, axis=1), axis=1)
         np.save(os.path.join(TMP_DIR, "segm_outputs_%i.npy" % output_i), res)

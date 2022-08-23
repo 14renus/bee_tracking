@@ -10,7 +10,7 @@ import numpy as np
 from . import unet
 from utils import func
 from utils.paths import DET_DATA_DIR, CHECKPOINT_DIR
-from utils.func import DS, GPU_NAME, NUM_LAYERS, NUM_FILTERS, CLASSES
+from utils.func import DS, GPU_NAME, NUM_LAYERS, NUM_FILTERS, CLASSES, clipped_sigmoid
 from plots import segm_map
 
 BATCH_SIZE = 4
@@ -140,9 +140,9 @@ class TrainModel:
 
         :param step: Frame step in batch_data to use as labels.
         :param loss: cross entropy + regression angle loss already calculated from tf model.
-        :param logits: Raw class preds before softmax
+        :param logits: Raw class preds before softmax/sigmoid [BATCH_SIZE, DS, DS, num_classes]
         :param angle_preds: Regression preds for angle
-        :param batch_data: Full data [BATCHSIZE, nb_frames, 4, DS, DS]
+        :param batch_data: Full data [BATCH_SIZE, nb_frames, 4, DS, DS]
         :return: Tuple of metrics
                  - Boolean to indicate train (0) or test (1)
                  - loss: passed from model
@@ -154,7 +154,10 @@ class TrainModel:
         '''
         batch_data = batch_data[:, step, :, :, :]
 
-        pred_class = np.argmax(logits, axis=3)
+        if self.num_classes > 2:
+            pred_class = np.argmax(logits, axis=3)
+        else:
+            pred_class = np.round(clipped_sigmoid(logits.squeeze()))
         pred_angle = angle_preds[:, :, :, 0]
 
         lb = batch_data[:,1,:,:]

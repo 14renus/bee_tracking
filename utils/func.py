@@ -136,3 +136,8 @@ def get_frame_from_video_capture(frame_i, cap):
     is_success, frame = get_preprocessed_frame(cap, frame_i)
     if CHECK(is_success, "Failed to read frame: " + str(frame_i)): return
     return frame
+
+
+def clipped_sigmoid(X):
+    np.clip(X, -1, 1)
+    return 1 / (1 + np.exp(-X))

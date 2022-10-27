@@ -86,7 +86,7 @@ class FinetuneModel(train_detection.TrainModel):
                 self.sess = tf.Session(config=tf.ConfigProto(allow_soft_placement=True))
 
             checkpoint = func.find_last_checkpoint(checkpoint_dir)
-            print("Restoring checkpoint %i.." % checkpoint, flush=True)
+            print("Restoring checkpoint %i.. from %s" % (checkpoint, checkpoint_dir), flush=True)
             self.saver.restore(self.sess, os.path.join(checkpoint_dir, 'model_%06d.ckpt' % checkpoint))
             checkpoint += 1
 

@@ -141,3 +141,8 @@ def get_frame_from_video_capture(frame_i, cap):
 def clipped_sigmoid(X):
     np.clip(X, -1, 1)
     return 1 / (1 + np.exp(-X))
+
+def enumerate2(xs, start=0, step=1):
+    while start< len(xs):
+        yield (start, xs[start])
+        start += step

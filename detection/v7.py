@@ -136,7 +136,7 @@ def import_annotations(v7_annotations_file, pos_dir=paths.POS_DIR, class_mapping
                   np.savetxt(f, [[xc,yc,class_int,a]], fmt='%i', delimiter=',', newline='\n')
       return get_video_filename(data)
 
-def create_frames_from_video(video_path, img_dir=paths.IMG_DIR, frame_range=None, cropping_spec=None):
+def create_frames_from_video(video_path, img_dir=paths.IMG_DIR, frame_range=None, cropping_spec=None, frequency_prop=1):
     '''
     For one video, write frame .png files to subdir under img_dir.
 
@@ -148,6 +148,7 @@ def create_frames_from_video(video_path, img_dir=paths.IMG_DIR, frame_range=None
       img_dir: output dir to store frames, frames are stored in a sub dir of img_dir called video_name
       frame_range: range of sequential frames numbers (indexed by 0), if empty produces frames for entire video
       cropping_spec: cropping specification (of type CroppingSpec), used to crop the frame. Expects None if no cropping is applied.
+      frequency_prop: proportion of frames to keep. If og fps = 50 and frequency_prop=.5, final fps = 25
     '''
     video_name = video_path.split('/')[-1].replace('.mp4','')
     print('Processing video', video_name, '...')
@@ -157,7 +158,7 @@ def create_frames_from_video(video_path, img_dir=paths.IMG_DIR, frame_range=None
 
     if frame_range is None:
       frame_range = range(0,int(cap.get(cv2.CAP_PROP_FRAME_COUNT)))
-    for i, frame_i in enumerate(frame_range):
+    for i, frame_i in func.enumerate2(frame_range, step=int(1/frequency_prop)):
         print('frame:', frame_i, end='...')
         frame = func.get_frame_from_video_capture(frame_i, cap)
         if i==0: print('Original frames shape:',frame.shape)
@@ -192,11 +193,35 @@ def save_labelled_video(video_filename, output_dir, fps=60, pos_dir=paths.POS_DI
 
 ######## MAIN FUNCTION ##############
 
-def import_annotations_and_generate_frames(v7_annotations_file, video_dir, pos_dir=paths.POS_DIR, img_dir=paths.IMG_DIR, crop_w=FR_D, crop_h=FR_D, class_mapping={'dancing_bee':0}, allowed_instance_ids_for_cropping_spec=None, frames_range_to_generate=None, labelled_video_dir=None, fps=50):
+def import_annotations_and_generate_frames(v7_annotations_file,
+                                           video_dir,
+                                           pos_dir=paths.POS_DIR, img_dir=paths.IMG_DIR,
+                                           crop_w=FR_D, crop_h=FR_D,
+                                           class_mapping={'dancing_bee':0},
+                                           allowed_instance_ids_for_cropping_spec=None,
+                                           frames_range_to_generate=None,
+                                           labelled_video_dir=None,
+                                           original_fps=50, fps_to_generate=25):
+  '''
+
+  :param v7_annotations_file:
+  :param video_dir:
+  :param pos_dir:
+  :param img_dir:
+  :param crop_w:
+  :param crop_h:
+  :param class_mapping:
+  :param allowed_instance_ids_for_cropping_spec:
+  :param frames_range_to_generate:
+  :param labelled_video_dir:
+  :param original_fps: orignal fps of video
+  :param fps_to_generate:  should be <= fps, expected fps of input data to detection model.
+  :return:
+  '''
   cropping_spec = find_cropping_spec(v7_annotations_file, crop_w, crop_h, allowed_instance_ids=allowed_instance_ids_for_cropping_spec)
   video_filename = import_annotations(v7_annotations_file, pos_dir, class_mapping, cropping_spec)
   video_path = os.path.join(video_dir,video_filename)
-  create_frames_from_video(video_path, img_dir=img_dir, frame_range=frames_range_to_generate, cropping_spec=cropping_spec)
+  create_frames_from_video(video_path, img_dir=img_dir, frame_range=frames_range_to_generate, cropping_spec=cropping_spec,frequency_prop=fps_to_generate/original_fps)
   if labelled_video_dir:
-      save_labelled_video(video_filename, labelled_video_dir, fps=fps, pos_dir=pos_dir, img_dir=img_dir)
+      save_labelled_video(video_filename, labelled_video_dir, fps=original_fps, pos_dir=pos_dir, img_dir=img_dir)
   return cropping_spec

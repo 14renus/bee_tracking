@@ -109,6 +109,7 @@ def create_from_frames(frame_nbs, img_dir, pos_dir, out_dir=paths.DET_DATA_DIR, 
 
     if frame_nbs is None:
         frame_nbs = [int(f.replace('.png','')) for f in os.listdir(img_dir) if re.search('.png', f)]
+        frame_nbs.sort()
 
     # Check shape of first frame.
     img_shape = func.read_img(frame_nbs[0], img_dir).shape

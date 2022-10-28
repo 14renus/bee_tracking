@@ -58,7 +58,6 @@ class FinetuneModel(train_detection.TrainModel):
 
             if not self.continue_finetuning:
                 self.saver = tf.train.Saver(tf.global_variables())
-                self.sess = tf.Session(config=tf.ConfigProto(allow_soft_placement=True))
 
             # Add new finetuned layer.
             with tf.device(tf_dev), tf.name_scope('%s_%d' % (GPU_NAME, 0)) as scope:
@@ -83,21 +82,20 @@ class FinetuneModel(train_detection.TrainModel):
 
             if self.continue_finetuning:
                 self.saver = tf.train.Saver(tf.global_variables())
-                self.sess = tf.Session(config=tf.ConfigProto(allow_soft_placement=True))
 
             checkpoint = func.find_last_checkpoint(checkpoint_dir)
             print("Restoring checkpoint %i.. from %s" % (checkpoint, checkpoint_dir), flush=True)
+            self.sess = tf.Session(config=tf.ConfigProto(allow_soft_placement=True))
             self.saver.restore(self.sess, os.path.join(checkpoint_dir, 'model_%06d.ckpt' % checkpoint))
             checkpoint += 1
 
-            # (Re)init saver to include added global variables, session to include full graph.
+            # (Re)init saver to include added global variables.
             self.saver = tf.train.Saver(tf.global_variables())
-            self.sess = tf.Session(config=tf.ConfigProto(allow_soft_placement=True))
 
             # Init added variables only, not variables loaded from checkpoint.
             global_vars = tf.global_variables()
-            is_not_initialized = self.sess.run([tf.is_variable_initialized(var) for var in global_vars])
-            not_initialized_vars = [v for (v, f) in zip(global_vars, is_not_initialized) if not f]
+            is_initialized = self.sess.run([tf.is_variable_initialized(var) for var in global_vars])
+            not_initialized_vars = [v for (v, f) in zip(global_vars, is_initialized) if not f]
             if len(not_initialized_vars):
                 self.sess.run(tf.variables_initializer(not_initialized_vars))
             self.sess.run(tf.local_variables_initializer())

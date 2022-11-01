@@ -139,6 +139,8 @@ class DetectionInference:
     def start_workers(self, total_frames, pos_dir=POS_DIR):
         self.workers = [multiprocessing.Process(target=save_output_worker, args=(total_frames,pos_dir,)) for _ in range(N_PROC)]
         for p in self.workers:
+            p.daemon=True # Attempts to terminate daemonic child processes.
+            print("Starting worker:",p,p.pid)
             p.start()
 
     def stop_workers(self):
@@ -166,7 +168,8 @@ class DetectionInference:
         for i in range(n_runs):
             run_offs, start_off_i = self._load_offs_for_run(offsets, start_off_i)
             last_priors = np.zeros((BATCH_SIZE, DS, DS, NUM_FILTERS), dtype=np.float32)
-            for cur_fr,fl in enumerate(fls):
+            for fl in fls:
+                cur_fr = int(os.path.splitext(os.path.basename(fl))[0])
                 feed_dict = self._feed_dict(run_offs, fl, last_priors)
                 outs, last_priors = self.sess.run([self.outputs, self.priors], feed_dict=feed_dict)
                 self._save_output(outs, output_i)

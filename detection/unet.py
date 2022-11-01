@@ -191,7 +191,7 @@ def angle_loss(angle_pred, angle_labels, weight_map, ignore_bg=False, use_weight
     #tf.add_to_collection('losses', loss)
     return loss #tf.add_n(tf.get_collection('losses'), name='total_loss')
 
-def metrics(self, loss, logits, labels, angle_preds, angle_labels, loss_softmax, loss_angle, num_classes):
+def metrics(loss, logits, labels, angle_preds, angle_labels, loss_softmax, loss_angle, num_classes):
         '''
         Calculate metrics for a train or test step.
 

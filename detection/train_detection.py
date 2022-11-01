@@ -153,32 +153,10 @@ class TrainModel:
                  - angle_error: "angle error" = mean difference in angle
         '''
         batch_data = batch_data[:, step, :, :, :]
+        labels = batch_data[:,1,:,:]
+        angle_labels = batch_data[:,2,:,:]
 
-        if self.num_classes > 2:
-            pred_class = np.argmax(logits, axis=3)
-        else:
-            pred_class = np.round(clipped_sigmoid(logits.squeeze()))
-        pred_angle = angle_preds[:, :, :, 0]
-
-        lb = batch_data[:,1,:,:]
-        angle = batch_data[:,2,:,:]
-        is_bg = (lb == 0)
-        is_fg = np.logical_not(is_bg)
-        n_fg = np.sum(is_fg)
-        # Background accuracy. Correct if pred class 0 and angle < 0.
-        # bg = float(np.sum((pred_class[is_bg] == 0) & (pred_angle[is_bg] < 0)))/np.sum(is_bg)
-        bg = float(np.sum(pred_class[is_bg] == 0))/np.sum(is_bg)
-        fg = 0
-        fg_err = np.max(lb)
-        angle_err = 0
-        if n_fg > 0:
-            # Foreground accuracy. Correct if pred class != 0.
-            fg = float(np.sum(pred_class[is_fg] != 0))/n_fg
-            # Foreground error. Incorrect if pred class != label class.
-            fg_err = np.mean(lb[is_fg] != pred_class[is_fg])
-            # Foreground angle error. Abs difference in angle pred and label
-            angle_err = np.mean(np.abs(pred_angle[is_fg] - angle[is_fg]))
-        return np.array([0, loss, bg, fg, fg_err, angle_err, loss_softmax, loss_angle])
+        return unet.metrics(loss, logits, labels, angle_preds, angle_labels, loss_softmax, loss_angle, self.num_classes)
 
     def _sample_offsets(self, data):
         '''

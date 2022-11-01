@@ -4,6 +4,8 @@ if int(tf.__version__[0]) > 1:
     tf.disable_v2_behavior()
 import math
 from utils.func import CLASSES
+import numpy as np
+from utils.func import clipped_sigmoid
 
 def _create_conv_relu(inputs, name, filters, dropout_ratio, is_training, strides=[1,1], kernel_size=[3,3], padding="SAME", relu=True, random_seed=0):
     '''
@@ -188,3 +190,46 @@ def angle_loss(angle_pred, angle_labels, weight_map, ignore_bg=False, use_weight
         loss = fg_loss + bg_loss
     #tf.add_to_collection('losses', loss)
     return loss #tf.add_n(tf.get_collection('losses'), name='total_loss')
+
+def metrics(self, loss, logits, labels, angle_preds, angle_labels, loss_softmax, loss_angle, num_classes):
+        '''
+        Calculate metrics for a train or test step.
+
+        :param loss: cross entropy + regression angle loss already calculated from tf model.
+        :param logits: Raw class preds before softmax/sigmoid [BATCH_SIZE, DS, DS, num_classes]
+        :param angle_preds: Regression preds for angle
+        :return: Tuple of metrics
+                 - Boolean to indicate train (0) or test (1)
+                 - loss: passed from model
+                 - bg: "background overlap" = (correct class = 0 and angle < 0) / # background pixels
+                 - fg: "foreground overlap" = (correct class !=0) / # foreground pixels
+                 Just for foreground pixels:
+                 - fg_error: "class error" = incorrect class / # foreground pixels
+                 - angle_error: "angle error" = mean difference in angle
+        '''
+
+        if num_classes > 2:
+            pred_class = np.argmax(logits, axis=3)
+        else:
+            pred_class = np.round(clipped_sigmoid(logits.squeeze()))
+        pred_angle = angle_preds[:, :, :, 0]
+
+        lb = labels
+        angle = angle_labels
+        is_bg = (lb == 0)
+        is_fg = np.logical_not(is_bg)
+        n_fg = np.sum(is_fg)
+        # Background accuracy. Correct if pred class 0 and angle < 0.
+        # bg = float(np.sum((pred_class[is_bg] == 0) & (pred_angle[is_bg] < 0)))/np.sum(is_bg)
+        bg = float(np.sum(pred_class[is_bg] == 0))/np.sum(is_bg)
+        fg = 0
+        fg_err = np.max(lb)
+        angle_err = 0
+        if n_fg > 0:
+            # Foreground accuracy. Correct if pred class != 0.
+            fg = float(np.sum(pred_class[is_fg] != 0))/n_fg
+            # Foreground error. Incorrect if pred class != label class.
+            fg_err = np.mean(lb[is_fg] != pred_class[is_fg])
+            # Foreground angle error. Abs difference in angle pred and label
+            angle_err = np.mean(np.abs(pred_angle[is_fg] - angle[is_fg]))
+        return np.array([0, loss, bg, fg, fg_err, angle_err, loss_softmax, loss_angle])

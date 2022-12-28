@@ -68,12 +68,12 @@ def save_output_worker(total_frames, output_dir):
 
 class DetectionInference:
 
-    def __init__(self, num_classes=CLASSES, labelled_data_file=None):
+    def __init__(self, num_classes=CLASSES, labelled_data_file=None, loss_upweight=3000):
         self.num_classes = num_classes
         self.batch_data = np.zeros((BATCH_SIZE, DS, DS, 1), dtype=np.float32)
         self.calc_metrics = (labelled_data_file is not None)
         self.labelled_data_file=labelled_data_file
-        self.loss_upweight = 1500
+        self.loss_upweight = loss_upweight
 
     def __enter__(self):
         return self
@@ -299,7 +299,7 @@ class FinetunedDetectionInference(DetectionInference):
 ######## MAIN FUNCTION ##############
 
 def find_detections(checkpoint_dir=os.path.join(CHECKPOINT_DIR, "unet2"), img_dir=IMG_DIR, pos_dir=POS_DIR, overwrite=False,
-                    labelled_data_file=None,
+                    labelled_data_file=None, loss_upweight=3000,
                     det_model_class=DetectionInference):
     '''
     Run inferrence and write position detections for sequence of frames.
@@ -309,6 +309,7 @@ def find_detections(checkpoint_dir=os.path.join(CHECKPOINT_DIR, "unet2"), img_di
     :param pos_dir: output directory to store detections.
     :param overwrite: whether to overwrite positions in directory.
     :param labelled_data_file: full path to .npz file holding labels. Enables to also calculate loss and error metrics.
+    :param loss_upweight: only used if labelled_data_file is passed, and need to compute metrics (including weighted loss).
     :param det_model_class: which model class to use to load model from checkpoint.
            DetectionInference to load original model checkpoint, FinetunedDetectionInference to load finetuned model.
     '''
@@ -328,7 +329,7 @@ def find_detections(checkpoint_dir=os.path.join(CHECKPOINT_DIR, "unet2"), img_di
     offsets = generate_offsets_for_frame(img_shape)
     print('frame shape:', img_shape)
 
-    with det_model_class(labelled_data_file=labelled_data_file) as model_obj:
+    with det_model_class(labelled_data_file=labelled_data_file, loss_upweight=loss_upweight) as model_obj:
         model_obj.build_model(checkpoint_dir)
         model_obj.start_workers(num_fls, pos_dir)
         try:

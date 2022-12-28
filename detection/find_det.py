@@ -159,7 +159,7 @@ class DetectionInference:
         res = np.zeros((batch_size, data.shape[0], data.shape[1], DS, DS))
         for i, (off_x, off_y) in enumerate(offsets):
             if (off_x >= 0) and (off_y >= 0):
-                res[i] = np.copy(data[:,:,off_x:(off_x+DS),off_y:(off_y+DS)])
+                res[i] = np.copy(data[:, :, off_y:(off_y + DS), off_x:(off_x + DS)])
         return res
 
     '''

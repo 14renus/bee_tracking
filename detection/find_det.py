@@ -9,10 +9,9 @@ import time
 import numpy as np
 import math
 import shutil
-import itertools
 import multiprocessing
 from utils.paths import DATA_DIR, IMG_DIR, POS_DIR, TMP_DIR, CHECKPOINT_DIR
-from utils.func import DS, GPU_NAME, NUM_LAYERS, NUM_FILTERS, CLASSES, clipped_sigmoid
+from utils.func import DS, GPU_NAME, NUM_LAYERS, NUM_FILTERS, CLASSES, clipped_sigmoid, generate_offsets_for_frame
 from utils import func
 
 N_PROC = 3
@@ -24,14 +23,6 @@ to_save = multiprocessing.Queue()
 
 def get_img_shape(img_dir):
     return func.read_img(0, img_dir).shape
-
-# Generate offset (x,y) coordinates, to create 256x256 patches on each frame.
-def generate_offsets_for_frame(img_shape):
-    func.check_img_shape(img_shape) 
-    h, w = img_shape
-    xs = range(0, w, DS)
-    ys = range(0, h, DS)
-    return list(itertools.product(xs, ys))
 
 ######## POSTPROCESSING AND SAVING SEGMENTATION RESULTS ############
 

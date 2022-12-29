@@ -14,9 +14,9 @@ class FinetuneModel(train_detection.TrainModel):
     Loads graph from saved .meta file, without recreating graph. Then adds on finetuneable layers.
     '''
 
-    def __init__(self, data_path, train_prop, with_augmentation, dropout_ratio=0, learning_rate=train_detection.BASE_LR,
+    def __init__(self, data_path, train_prop, with_augmentation, random_frame_tiles, dropout_ratio=0, learning_rate=train_detection.BASE_LR,
                  loss_upweight=10, set_random_seed=False, num_classes=3, continue_finetuning_from_checkpoint=False):
-        super(FinetuneModel, self).__init__(data_path, train_prop, with_augmentation,
+        super(FinetuneModel, self).__init__(data_path, train_prop, with_augmentation, random_frame_tiles,
                                             dropout_ratio, learning_rate, loss_upweight, set_random_seed, num_classes)
         self.continue_finetuning = continue_finetuning_from_checkpoint
 
@@ -104,7 +104,8 @@ class FinetuneModel(train_detection.TrainModel):
 
 def run_finetuning(data_path=DET_DATA_DIR, checkpoint_dir=os.path.join(CHECKPOINT_DIR, "unet2"),
                    output_checkpoint_dir=None,
-                   train_prop=0.9, n_iters=10, with_augmentation=True, dropout_ratio=0,
+                   train_prop=0.9, n_iters=10, with_augmentation=True, random_frame_tiles=False,
+                   dropout_ratio=0,
                    learning_rate=train_detection.BASE_LR, loss_upweight=10, set_random_seed=False,
                    num_classes=CLASSES, return_img=False,
                    continue_finetuning_from_saved_checkpoint=False):
@@ -119,8 +120,10 @@ def run_finetuning(data_path=DET_DATA_DIR, checkpoint_dir=os.path.join(CHECKPOIN
     :param train_prop: proportion of each .npz file to be trained on, rest is reserved for test.
     :param n_iters: how many .npz files to iterate through.
     :param with_augmentation: whether to randomly flip horizontally and vertically (train data only).
+    :param random_frame_tiles: whether to randomly choose BATCH_SIZE number of DS x DS tiles within a frame to train on.
+                               defaults to choosing first four tiles of DS x DS.
     :param loss_upweight: positive weight to upweight pixels when calculating average loss
-    :param set_random_seed:
+    :param set_random_seed: tries to remove variation amongst training runs.
     :param return_img: whether to return segmentation and angle preds on test images
     :param continue_finetuning_from_saved_checkpoint: whether to skip adding new nodes, and just continiue training
     :return:
@@ -128,7 +131,7 @@ def run_finetuning(data_path=DET_DATA_DIR, checkpoint_dir=os.path.join(CHECKPOIN
       img: if return_img is true, return last iteration's predictions on test (list of tuples of segmentation & angle preds)
       iters: total number of iterations performed to train model_obj (picks up from last checkpoint)
     '''
-    model_obj = FinetuneModel(data_path, train_prop, with_augmentation, dropout_ratio, learning_rate, loss_upweight, set_random_seed, num_classes, continue_finetuning_from_saved_checkpoint)
+    model_obj = FinetuneModel(data_path, train_prop, with_augmentation, random_frame_tiles, dropout_ratio, learning_rate, loss_upweight, set_random_seed, num_classes, continue_finetuning_from_saved_checkpoint)
     start_iter = model_obj.build_model(checkpoint_dir)
     if output_checkpoint_dir:
         func.make_dir(output_checkpoint_dir)

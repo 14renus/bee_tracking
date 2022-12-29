@@ -10,7 +10,7 @@ import numpy as np
 from . import unet
 from utils import func
 from utils.paths import DET_DATA_DIR, CHECKPOINT_DIR
-from utils.func import DS, GPU_NAME, NUM_LAYERS, NUM_FILTERS, CLASSES, clipped_sigmoid
+from utils.func import DS, GPU_NAME, NUM_LAYERS, NUM_FILTERS, CLASSES, clipped_sigmoid, generate_offsets_for_frame
 from plots import segm_map
 
 BATCH_SIZE = 4
@@ -44,7 +44,7 @@ def flip_v(data):
 
 class TrainModel:
 
-    def __init__(self, data_path, train_prop, with_augmentation, dropout_ratio=0, learning_rate=BASE_LR, loss_upweight=10, set_random_seed=False, num_classes=3):
+    def __init__(self, data_path, train_prop, with_augmentation, random_frame_tiles=False, dropout_ratio=0, learning_rate=BASE_LR, loss_upweight=10, set_random_seed=False, num_classes=3):
         self.data_path = data_path
         self.input_files = [f for f in os.listdir(data_path) if re.search('npz', f)]
         self.set_random_seed = set_random_seed
@@ -55,6 +55,7 @@ class TrainModel:
           shuffle(self.input_files)
         self.train_prop = train_prop
         self.with_augmentation = with_augmentation
+        self.random_frame_tiles = random_frame_tiles
         self.dropout_ratio = dropout_ratio
         self.learning_rate = learning_rate
         self.loss_upweight = loss_upweight
@@ -165,12 +166,16 @@ class TrainModel:
         :param data: data from 1 npz file (1 sequence of frames). shape = (num_frames, 4, H, W)
         '''
         res = np.zeros((BATCH_SIZE, data.shape[0], data.shape[1], DS, DS))
+        offsets = generate_offsets_for_frame((data.shape[2], data.shape[3]))
         for i in range(BATCH_SIZE):
-            # Randomly sample x and y offset. Randomly decide to flip horizontally and vertically if with_augmentation.
-            off_x, off_y, fh, fv = randint(0, data.shape[2]-DS), randint(0, data.shape[3]-DS), randint(0, 1), randint(0, 1)
+            # Randomly sample x and y offset if random_frame_tiles.
+            # Randomly decide to flip horizontally and vertically if with_augmentation.
+            off_y, off_x, fh, fv = randint(0, data.shape[2]-DS), randint(0, data.shape[3]-DS), randint(0, 1), randint(0, 1)
             if not self.with_augmentation:
                 fh, fv = 0, 0
-            cut_data = np.copy(data[:,:,off_x:(off_x+DS),off_y:(off_y+DS)])
+            if not self.random_frame_tiles and BATCH_SIZE <= len(offsets):
+                off_x, off_y = offsets[i]
+            cut_data = np.copy(data[:,:,off_y:(off_y+DS),off_x:(off_x+DS)])
             if fh:
                 cut_data = flip_h(cut_data)
             if fv:
@@ -252,7 +257,8 @@ def run_training_on_model(model_obj, start_iter, n_iters, return_img):
 
 def run_training(data_path=DET_DATA_DIR, checkpoint_dir=os.path.join(CHECKPOINT_DIR, "unet2"),
                  output_checkpoint_dir=None,
-                 train_prop=0.9, n_iters=10, with_augmentation=True, dropout_ratio=0, learning_rate=BASE_LR,
+                 train_prop=0.9, n_iters=10, with_augmentation=True, random_frame_tiles=False,
+                 dropout_ratio=0, learning_rate=BASE_LR,
                  loss_upweight=10,
                  set_random_seed=False,
                  num_classes=CLASSES, return_img=False):
@@ -267,6 +273,8 @@ def run_training(data_path=DET_DATA_DIR, checkpoint_dir=os.path.join(CHECKPOINT_
     :param train_prop: proportion of each .npz file to be trained on, rest is reserved for test.
     :param n_iters: how many .npz files to iterate through.
     :param with_augmentation: whether to randomly flip horizontally and vertically (train data only).
+    :param random_frame_tiles: whether to randomly choose BATCH_SIZE number of DS x DS tiles within a frame to train on.
+                               defaults to choosing first four tiles of DS x DS.
     :param dropout_ratio: percentage of random neurons to drop during training steps. prevents overfitting.
     :param loss_upweight: positive weight to upweight pixels when calculating average loss.
                           assumes weight placeholder is 0 where pixels should not be upweighted.
@@ -278,7 +286,7 @@ def run_training(data_path=DET_DATA_DIR, checkpoint_dir=os.path.join(CHECKPOINT_
       img: if return_img is true, return last iteration's predictions on test (list of tuples of segmentation & angle preds)
       iters: total number of iterations performed to train model_obj (picks up from last checkpoint)
     '''
-    model_obj = TrainModel(data_path, train_prop, with_augmentation, dropout_ratio, learning_rate, loss_upweight, set_random_seed, num_classes)
+    model_obj = TrainModel(data_path, train_prop, with_augmentation, random_frame_tiles, dropout_ratio, learning_rate, loss_upweight, set_random_seed, num_classes)
     start_iter = model_obj.build_model(checkpoint_dir)
     if output_checkpoint_dir:
         func.make_dir(output_checkpoint_dir)

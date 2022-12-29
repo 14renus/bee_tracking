@@ -1,5 +1,6 @@
 import cv2
 import os, sys, re
+import itertools
 import numpy as np
 from PIL import Image
 from multiprocessing import Pool
@@ -86,6 +87,18 @@ def crop(img, y, x):
     d[x1:x2,y1:y2] = img[max(0, x - SQ):min(x + SQ, img.shape[0]), max(0, y - SQ):min(y + SQ, img.shape[1])]
     return d
 
+def generate_offsets_for_frame(img_shape):
+    """
+    Generate offset (x,y) coordinates, to create 256x256 patches on each frame.
+
+    :param img_shape tupe holding (height, width) of frame.
+    :return list of tuples of (off_x, off_y) corresponding to offset of width and height.
+    """
+    check_img_shape(img_shape)
+    h, w = img_shape
+    xs = range(0, w, DS)
+    ys = range(0, h, DS)
+    return list(itertools.product(xs, ys))
 
 def t2n(i, fls, txt_path, npy_path):
     fl = fls[i]

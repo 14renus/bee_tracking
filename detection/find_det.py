@@ -236,8 +236,8 @@ class DetectionInference:
 
 class FinetunedDetectionInference(DetectionInference):
 
-    def __init__(self, num_classes=2,labelled_data_file=None):
-        super().__init__(num_classes,labelled_data_file)
+    def __init__(self, num_classes=2,labelled_data_file=None,loss_upweight=3000,):
+        super().__init__(num_classes,labelled_data_file,loss_upweight)
 
 
     def build_model(self, checkpoint_dir):

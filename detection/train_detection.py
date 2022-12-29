@@ -267,9 +267,11 @@ def run_training(data_path=DET_DATA_DIR, checkpoint_dir=os.path.join(CHECKPOINT_
     :param train_prop: proportion of each .npz file to be trained on, rest is reserved for test.
     :param n_iters: how many .npz files to iterate through.
     :param with_augmentation: whether to randomly flip horizontally and vertically (train data only).
+    :param dropout_ratio: percentage of random neurons to drop during training steps. prevents overfitting.
     :param loss_upweight: positive weight to upweight pixels when calculating average loss.
                           assumes weight placeholder is 0 where pixels should not be upweighted.
-    :param set_random_seed:
+    :param set_random_seed: tries to remove variation amongst training runs.
+    :param num_classes: number of output classes the softmax head will predict.
     :param return_img: whether to return segmentation and angle preds on test images
     :return:
       model_obj: TrainModel object.

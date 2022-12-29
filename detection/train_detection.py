@@ -44,7 +44,11 @@ def flip_v(data):
 
 class TrainModel:
 
-    def __init__(self, data_path, train_prop, with_augmentation, random_frame_tiles=False, dropout_ratio=0, learning_rate=BASE_LR, loss_upweight=10, set_random_seed=False, num_classes=3):
+    def __init__(self, data_path, train_prop,
+                 with_augmentation, random_frame_tiles=False,
+                 dropout_ratio=0, learning_rate=BASE_LR,
+                 loss_upweight=10, angle_loss_weight=1,
+                 set_random_seed=False, num_classes=3):
         self.data_path = data_path
         self.input_files = [f for f in os.listdir(data_path) if re.search('npz', f)]
         self.set_random_seed = set_random_seed
@@ -59,6 +63,7 @@ class TrainModel:
         self.dropout_ratio = dropout_ratio
         self.learning_rate = learning_rate
         self.loss_upweight = loss_upweight
+        self.angle_loss_weight = angle_loss_weight
         self.num_classes = num_classes
 
     def __enter__(self):
@@ -79,7 +84,7 @@ class TrainModel:
         loss_softmax = unet.loss(logits, label, weight, self.num_classes)
         loss_angle = unet.angle_loss(angle_pred, angle_label, weight)
 
-        total_loss = loss_softmax + loss_angle #tf.add_n(losses, name='total_loss')
+        total_loss = loss_softmax + self.angle_loss_weight * loss_angle #tf.add_n(losses, name='total_loss')
         return logits, total_loss, last_relu, angle_pred, loss_softmax, loss_angle
 
     def build_model(self, checkpoint_dir):
@@ -259,7 +264,7 @@ def run_training(data_path=DET_DATA_DIR, checkpoint_dir=os.path.join(CHECKPOINT_
                  output_checkpoint_dir=None,
                  train_prop=0.9, n_iters=10, with_augmentation=True, random_frame_tiles=False,
                  dropout_ratio=0, learning_rate=BASE_LR,
-                 loss_upweight=10,
+                 loss_upweight=10, angle_loss_weight=1,
                  set_random_seed=False,
                  num_classes=CLASSES, return_img=False):
     '''
@@ -278,6 +283,7 @@ def run_training(data_path=DET_DATA_DIR, checkpoint_dir=os.path.join(CHECKPOINT_
     :param dropout_ratio: percentage of random neurons to drop during training steps. prevents overfitting.
     :param loss_upweight: positive weight to upweight pixels when calculating average loss.
                           assumes weight placeholder is 0 where pixels should not be upweighted.
+    :param angle_loss_weight: weight of angle_loss in total_loss calculation (total_loss = softmax_loss + angle_loss_weight * angle_loss).
     :param set_random_seed: tries to remove variation amongst training runs.
     :param num_classes: number of output classes the softmax head will predict.
     :param return_img: whether to return segmentation and angle preds on test images
@@ -286,7 +292,7 @@ def run_training(data_path=DET_DATA_DIR, checkpoint_dir=os.path.join(CHECKPOINT_
       img: if return_img is true, return last iteration's predictions on test (list of tuples of segmentation & angle preds)
       iters: total number of iterations performed to train model_obj (picks up from last checkpoint)
     '''
-    model_obj = TrainModel(data_path, train_prop, with_augmentation, random_frame_tiles, dropout_ratio, learning_rate, loss_upweight, set_random_seed, num_classes)
+    model_obj = TrainModel(data_path, train_prop, with_augmentation, random_frame_tiles, dropout_ratio, learning_rate, loss_upweight, angle_loss_weight, set_random_seed, num_classes)
     start_iter = model_obj.build_model(checkpoint_dir)
     if output_checkpoint_dir:
         func.make_dir(output_checkpoint_dir)

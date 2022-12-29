@@ -15,9 +15,9 @@ class FinetuneModel(train_detection.TrainModel):
     '''
 
     def __init__(self, data_path, train_prop, with_augmentation, random_frame_tiles, dropout_ratio=0, learning_rate=train_detection.BASE_LR,
-                 loss_upweight=10, set_random_seed=False, num_classes=3, continue_finetuning_from_checkpoint=False):
+                 loss_upweight=10, angle_loss_weight=1, set_random_seed=False, num_classes=3, continue_finetuning_from_checkpoint=False):
         super(FinetuneModel, self).__init__(data_path, train_prop, with_augmentation, random_frame_tiles,
-                                            dropout_ratio, learning_rate, loss_upweight, set_random_seed, num_classes)
+                                            dropout_ratio, learning_rate, loss_upweight, angle_loss_weight, set_random_seed, num_classes)
         self.continue_finetuning = continue_finetuning_from_checkpoint
 
 
@@ -27,7 +27,7 @@ class FinetuneModel(train_detection.TrainModel):
         loss_softmax = unet.loss(logits, label, weight, self.num_classes)
         loss_angle = unet.angle_loss(angle_pred, angle_label, weight, ignore_bg=True, use_weights=False)
 
-        total_loss = loss_softmax + loss_angle #tf.add_n(losses, name='total_loss')
+        total_loss = loss_softmax + self.angle_loss_weight * loss_angle #tf.add_n(losses, name='total_loss')
         return logits, total_loss, last_relu, angle_pred, loss_softmax, loss_angle
 
     def build_model(self, checkpoint_dir):
@@ -106,7 +106,9 @@ def run_finetuning(data_path=DET_DATA_DIR, checkpoint_dir=os.path.join(CHECKPOIN
                    output_checkpoint_dir=None,
                    train_prop=0.9, n_iters=10, with_augmentation=True, random_frame_tiles=False,
                    dropout_ratio=0,
-                   learning_rate=train_detection.BASE_LR, loss_upweight=10, set_random_seed=False,
+                   learning_rate=train_detection.BASE_LR,
+                   loss_upweight=10, angle_loss_weight=0,
+                   set_random_seed=False,
                    num_classes=CLASSES, return_img=False,
                    continue_finetuning_from_saved_checkpoint=False):
     '''
@@ -123,6 +125,7 @@ def run_finetuning(data_path=DET_DATA_DIR, checkpoint_dir=os.path.join(CHECKPOIN
     :param random_frame_tiles: whether to randomly choose BATCH_SIZE number of DS x DS tiles within a frame to train on.
                                defaults to choosing first four tiles of DS x DS.
     :param loss_upweight: positive weight to upweight pixels when calculating average loss
+    :param angle_loss_weight: weight of angle_loss in total_loss calculation (total_loss = softmax_loss + angle_loss_weight * angle_loss)
     :param set_random_seed: tries to remove variation amongst training runs.
     :param return_img: whether to return segmentation and angle preds on test images
     :param continue_finetuning_from_saved_checkpoint: whether to skip adding new nodes, and just continiue training
@@ -131,7 +134,7 @@ def run_finetuning(data_path=DET_DATA_DIR, checkpoint_dir=os.path.join(CHECKPOIN
       img: if return_img is true, return last iteration's predictions on test (list of tuples of segmentation & angle preds)
       iters: total number of iterations performed to train model_obj (picks up from last checkpoint)
     '''
-    model_obj = FinetuneModel(data_path, train_prop, with_augmentation, random_frame_tiles, dropout_ratio, learning_rate, loss_upweight, set_random_seed, num_classes, continue_finetuning_from_saved_checkpoint)
+    model_obj = FinetuneModel(data_path, train_prop, with_augmentation, random_frame_tiles, dropout_ratio, learning_rate, loss_upweight, angle_loss_weight, set_random_seed, num_classes, continue_finetuning_from_saved_checkpoint)
     start_iter = model_obj.build_model(checkpoint_dir)
     if output_checkpoint_dir:
         func.make_dir(output_checkpoint_dir)

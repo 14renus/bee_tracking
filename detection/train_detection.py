@@ -12,6 +12,7 @@ from utils import func
 from utils.paths import DET_DATA_DIR, CHECKPOINT_DIR
 from utils.func import DS, GPU_NAME, NUM_LAYERS, NUM_FILTERS, CLASSES, clipped_sigmoid, generate_offsets_for_frame
 from plots import segm_map
+import wandb
 
 BATCH_SIZE = 4
 BASE_LR = 0.0001
@@ -65,6 +66,20 @@ class TrainModel:
         self.loss_upweight = loss_upweight
         self.angle_loss_weight = angle_loss_weight
         self.num_classes = num_classes
+
+        if wandb.run is not None:
+            wandb.config.update({
+                "learning_rate": learning_rate,
+                "loss_upweight": loss_upweight,
+                "angle_loss_weight": angle_loss_weight,
+                "dropout_ratio": dropout_ratio,
+                "batch_size": BATCH_SIZE,
+                "train_prop": train_prop,
+                "with_augmentation": with_augmentation,
+                "set_random_seed": set_random_seed,
+                "random_frame_tiles": random_frame_tiles,
+                "input_files": self.input_files,
+            })
 
     def __enter__(self):
         return self
@@ -137,6 +152,12 @@ class TrainModel:
             init = tf.local_variables_initializer()
             self.sess.run(init)
 
+        if wandb.run is not None:
+            wandb.config.update({
+                "checkpoint_dir": checkpoint_dir,
+                "start_checkpoint": checkpoint,
+                "tf_dev": tf_dev,
+            })
         return checkpoint
 
 
@@ -152,7 +173,7 @@ class TrainModel:
         :return: Tuple of metrics
                  - Boolean to indicate train (0) or test (1)
                  - loss: passed from model
-                 - bg: "background overlap" = (correct class = 0 and angle < 0) / # background pixels
+                 - bg: "background overlap" = (correct class = 0) / # background pixels
                  - fg: "foreground overlap" = (correct class !=0) / # foreground pixels
                  Just for foreground pixels:
                  - fg_error: "class error" = incorrect class / # foreground pixels
@@ -163,6 +184,18 @@ class TrainModel:
         angle_labels = batch_data[:,2,:,:]
 
         return unet.metrics(loss, logits, labels, angle_preds, angle_labels, loss_softmax, loss_angle, self.num_classes)
+
+    def _log_accuracy_to_wandb(self, accuracy_t, step=None):
+        prefix = 'train_' if accuracy_t[0]==0 else 'val_'
+        commit = False if accuracy_t[0]==0 else True
+        wandb.log({prefix: { "total_loss": accuracy_t[1],
+                             "bg_overlap": accuracy_t[2],
+                             "fg_overlap": accuracy_t[3],
+                             "fg_error": accuracy_t[4],
+                             "angle_error": accuracy_t[5],
+                             "loss_softmax": accuracy_t[6],
+                             "loss_angle": accuracy_t[7]}},
+                   step=step, commit=commit)
 
     def _sample_offsets(self, data):
         '''
@@ -214,6 +247,8 @@ class TrainModel:
         accuracy_t = accuracy_t / (batch_data.shape[1] - start_step)
         accuracy_t[0] = 1
         print("TEST - time: %.3f min, loss: %.3f, class loss: %.3f, angle loss: %.3f, background overlap: %.3f, foreground overlap: %.3f, class error: %.3f, angle error: %.3f" % ((time.time() - t1) / 60, accuracy_t[1], accuracy_t[6],accuracy_t[7],accuracy_t[2], accuracy_t[3], accuracy_t[4], accuracy_t[5]), flush=True)
+        if wandb.run is not None:
+            self._log_accuracy_to_wandb(accuracy_t)
         with open(self.acc_file, 'a') as f:
             np.savetxt(f, np.reshape(accuracy_t, (1,-1)), fmt='%.5f', delimiter=',', newline='\n')
         return res_img
@@ -244,6 +279,8 @@ class TrainModel:
         accuracy_t = accuracy_t / train_steps
         accuracy_t[0] = 0
         print("TRAIN - time: %.3f min, loss: %.3f, class loss: %.3f, angle loss: %.3f, background overlap: %.3f, foreground overlap: %.3f, class error: %.3f, angle error: %.3f" % ((time.time() - t1) / 60, accuracy_t[1], accuracy_t[6],accuracy_t[7], accuracy_t[2], accuracy_t[3], accuracy_t[4], accuracy_t[5]), flush=True)
+        if wandb.run is not None:
+            self._log_accuracy_to_wandb(accuracy_t)
         with open(self.acc_file, 'a') as f:
             np.savetxt(f, np.reshape(accuracy_t, (1,-1)), fmt='%.5f', delimiter=',', newline='\n')
 
@@ -253,6 +290,11 @@ class TrainModel:
         return img
 
 def run_training_on_model(model_obj, start_iter, n_iters, return_img):
+    if wandb.run is not None:
+        wandb.config.update({
+            "epochs": n_iters,
+        })
+
     for i in range(start_iter, start_iter + n_iters):
         print("ITERATION: %i" % i, flush=True)
         img = model_obj.run_train_test_iter(i, return_img=return_img)
@@ -292,6 +334,9 @@ def run_training(data_path=DET_DATA_DIR, checkpoint_dir=os.path.join(CHECKPOINT_
       img: if return_img is true, return last iteration's predictions on test (list of tuples of segmentation & angle preds)
       iters: total number of iterations performed to train model_obj (picks up from last checkpoint)
     '''
+    if wandb.run is None:
+        print('Not logging to wandb. To enable, run `wandb.init(project="apis-dorsata", entity="renu")`.')
+
     model_obj = TrainModel(data_path, train_prop, with_augmentation, random_frame_tiles, dropout_ratio, learning_rate, loss_upweight, angle_loss_weight, set_random_seed, num_classes)
     start_iter = model_obj.build_model(checkpoint_dir)
     if output_checkpoint_dir:

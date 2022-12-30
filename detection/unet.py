@@ -201,7 +201,7 @@ def metrics(loss, logits, labels, angle_preds, angle_labels, loss_softmax, loss_
         :return: Tuple of metrics
                  - Boolean to indicate train (0) or test (1)
                  - loss: passed from model
-                 - bg: "background overlap" = (correct class = 0 and angle < 0) / # background pixels
+                 - bg: "background overlap" = (correct class = 0) / # background pixels
                  - fg: "foreground overlap" = (correct class !=0) / # foreground pixels
                  Just for foreground pixels:
                  - fg_error: "class error" = incorrect class / # foreground pixels

@@ -8,6 +8,7 @@ from . import unet
 from utils import func
 from utils.paths import DET_DATA_DIR, CHECKPOINT_DIR
 from utils.func import DS, GPU_NAME, NUM_LAYERS, NUM_FILTERS, CLASSES
+import wandb
 
 class FinetuneModel(train_detection.TrainModel):
     '''
@@ -99,6 +100,13 @@ class FinetuneModel(train_detection.TrainModel):
             if len(not_initialized_vars):
                 self.sess.run(tf.variables_initializer(not_initialized_vars))
             self.sess.run(tf.local_variables_initializer())
+
+        if wandb.run is not None:
+            wandb.config.update({
+                "checkpoint_dir": checkpoint_dir,
+                "start_checkpoint": checkpoint,
+                "tf_dev": tf_dev,
+            })
         return checkpoint
 
 

@@ -225,5 +225,5 @@ def import_annotations_and_generate_frames(v7_annotations_file,
   video_path = os.path.join(video_dir,video_filename)
   create_frames_from_video(video_path, img_dir=img_dir, frame_range=frames_range_to_generate, cropping_spec=cropping_spec,frequency_prop=fps_to_generate/original_fps)
   if labelled_video_dir:
-      save_labelled_video(video_filename, labelled_video_dir, fps=original_fps, pos_dir=pos_dir, img_dir=img_dir)
+      save_labelled_video(video_filename, labelled_video_dir, fps=fps_to_generate, pos_dir=pos_dir, img_dir=img_dir)
   return cropping_spec

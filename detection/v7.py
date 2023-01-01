@@ -134,6 +134,7 @@ def import_annotations(v7_annotations_file, pos_dir=paths.POS_DIR, class_mapping
                       continue
               with open(os.path.join(pos_dir, video_name, "%06d.txt" % int(frame)), 'a') as f:
                   np.savetxt(f, [[xc,yc,class_int,a]], fmt='%i', delimiter=',', newline='\n')
+      print()
       return get_video_filename(data)
 
 def create_frames_from_video(video_path, img_dir=paths.IMG_DIR, frame_range=None, cropping_spec=None, frequency_prop=1):
@@ -146,7 +147,7 @@ def create_frames_from_video(video_path, img_dir=paths.IMG_DIR, frame_range=None
     Args:
       video_path: full path to .mp4 file
       img_dir: output dir to store frames, frames are stored in a sub dir of img_dir called video_name
-      frame_range: range of sequential frames numbers (indexed by 0), if empty produces frames for entire video
+      frame_range: range of sequential frames numbers (indexed by 0), if empty produces frames for entire video.
       cropping_spec: cropping specification (of type CroppingSpec), used to crop the frame. Expects None if no cropping is applied.
       frequency_prop: proportion of frames to keep. If og fps = 50 and frequency_prop=.5, final fps = 25
     '''
@@ -173,6 +174,7 @@ def create_frames_from_video(video_path, img_dir=paths.IMG_DIR, frame_range=None
         # Save frame.
         im = Image.fromarray(frame)
         im.save(os.path.join(img_dir, video_name,"%06d.png" % frame_i))
+    print()
 
 def save_labelled_video(video_filename, output_dir, fps=60, pos_dir=paths.POS_DIR, img_dir=paths.IMG_DIR):
     path_save = os.path.join(output_dir,video_filename)
@@ -204,19 +206,19 @@ def import_annotations_and_generate_frames(v7_annotations_file,
                                            original_fps=50, fps_to_generate=25):
   '''
 
-  :param v7_annotations_file:
+  :param v7_annotations_file: full path of json file from v7 application.
   :param video_dir:
   :param pos_dir:
   :param img_dir:
   :param crop_w:
   :param crop_h:
-  :param class_mapping:
-  :param allowed_instance_ids_for_cropping_spec:
-  :param frames_range_to_generate:
-  :param labelled_video_dir:
+  :param class_mapping: v7 class name to class index-1.
+  :param allowed_instance_ids_for_cropping_spec: list of instance ids to concentrate cropping spec around.
+  :param frames_range_to_generate: range of sequential frames numbers (indexed by 0), if empty produces frames for entire video.
+  :param labelled_video_dir: if not None, save labelled frames in .mp4 to this dir.
   :param original_fps: orignal fps of video
   :param fps_to_generate:  should be <= fps, expected fps of input data to detection model.
-  :return:
+  :return: cropping_spec used to cut frames.
   '''
   cropping_spec = find_cropping_spec(v7_annotations_file, crop_w, crop_h, allowed_instance_ids=allowed_instance_ids_for_cropping_spec)
   video_filename = import_annotations(v7_annotations_file, pos_dir, class_mapping, cropping_spec)

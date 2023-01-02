@@ -186,7 +186,7 @@ class TrainModel:
         return unet.metrics(loss, logits, labels, angle_preds, angle_labels, loss_softmax, loss_angle, self.num_classes)
 
     def _log_accuracy_to_wandb(self, accuracy_t, step=None):
-        prefix = 'train_' if accuracy_t[0]==0 else 'val_'
+        prefix = 'train' if accuracy_t[0]==0 else 'val'
         commit = False if accuracy_t[0]==0 else True
         wandb.log({prefix: { "total_loss": accuracy_t[1],
                              "bg_overlap": accuracy_t[2],

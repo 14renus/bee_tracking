@@ -223,7 +223,7 @@ def metrics(loss, logits, labels, angle_preds, angle_labels, loss_softmax, loss_
         # bg = float(np.sum((pred_class[is_bg] == 0) & (pred_angle[is_bg] < 0)))/np.sum(is_bg)
         bg = float(np.sum(pred_class[is_bg] == 0))/np.sum(is_bg)
         fg = 0
-        fg_err = np.max(lb)
+        fg_err = 0
         angle_err = 0
         if n_fg > 0:
             # Foreground accuracy. Correct if pred class != 0.

@@ -137,7 +137,7 @@ def import_annotations(v7_annotations_file, pos_dir=paths.POS_DIR, class_mapping
       print()
       return get_video_filename(data)
 
-def create_frames_from_video(video_path, img_dir=paths.IMG_DIR, frame_range=None, cropping_spec=None, frequency_prop=1):
+def create_frames_from_video(video_path, img_dir=paths.IMG_DIR, frame_range=None, cropping_spec=None, fps_to_generate=50):
     '''
     For one video, write frame .png files to subdir under img_dir.
 
@@ -149,17 +149,20 @@ def create_frames_from_video(video_path, img_dir=paths.IMG_DIR, frame_range=None
       img_dir: output dir to store frames, frames are stored in a sub dir of img_dir called video_name
       frame_range: range of sequential frames numbers (indexed by 0), if empty produces frames for entire video.
       cropping_spec: cropping specification (of type CroppingSpec), used to crop the frame. Expects None if no cropping is applied.
-      frequency_prop: proportion of frames to keep. If og fps = 50 and frequency_prop=.5, final fps = 25
+      fps_to_generate: used to determine the proportion of frames to keep. should be <= original fps.
     '''
     video_name = video_path.split('/')[-1].replace('.mp4','')
     print('Processing video', video_name, '...')
     make_dir(os.path.join(img_dir,video_name))
     cap = cv2.VideoCapture(video_path)
     print("total frames",cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    original_fps = cap.get(cv2.CAP_PROP_FPS)
+    if fps_to_generate > original_fps:
+        raise ValueError("fps_to_generate: %d is bigger than orignal_fps: %d" % (fps_to_generate, original_fps))
 
     if frame_range is None:
       frame_range = range(0,int(cap.get(cv2.CAP_PROP_FRAME_COUNT)))
-    for i, frame_i in func.enumerate2(frame_range, step=int(1/frequency_prop)):
+    for i, frame_i in func.enumerate2(frame_range, step=int(original_fps/fps_to_generate)):
         print('frame:', frame_i, end='...')
         frame = func.get_frame_from_video_capture(frame_i, cap)
         if i==0: print('Original frames shape:',frame.shape)
@@ -203,7 +206,7 @@ def import_annotations_and_generate_frames(v7_annotations_file,
                                            allowed_instance_ids_for_cropping_spec=None,
                                            frames_range_to_generate=None,
                                            labelled_video_dir=None,
-                                           original_fps=50, fps_to_generate=25):
+                                           fps_to_generate=25):
   '''
 
   :param v7_annotations_file: full path of json file from v7 application.
@@ -216,14 +219,13 @@ def import_annotations_and_generate_frames(v7_annotations_file,
   :param allowed_instance_ids_for_cropping_spec: list of instance ids to concentrate cropping spec around.
   :param frames_range_to_generate: range of sequential frames numbers (indexed by 0), if empty produces frames for entire video.
   :param labelled_video_dir: if not None, save labelled frames in .mp4 to this dir.
-  :param original_fps: orignal fps of video
   :param fps_to_generate:  should be <= fps, expected fps of input data to detection model.
   :return: cropping_spec used to cut frames.
   '''
   cropping_spec = find_cropping_spec(v7_annotations_file, crop_w, crop_h, allowed_instance_ids=allowed_instance_ids_for_cropping_spec)
   video_filename = import_annotations(v7_annotations_file, pos_dir, class_mapping, cropping_spec)
   video_path = os.path.join(video_dir,video_filename)
-  create_frames_from_video(video_path, img_dir=img_dir, frame_range=frames_range_to_generate, cropping_spec=cropping_spec,frequency_prop=fps_to_generate/original_fps)
+  create_frames_from_video(video_path, img_dir=img_dir, frame_range=frames_range_to_generate, cropping_spec=cropping_spec,fps_to_generate=fps_to_generate)
   if labelled_video_dir:
       save_labelled_video(video_filename, labelled_video_dir, fps=fps_to_generate, pos_dir=pos_dir, img_dir=img_dir)
   return cropping_spec

@@ -101,10 +101,10 @@ class FinetuneModel(train_detection.TrainModel):
                 self.sess.run(tf.variables_initializer(not_initialized_vars))
             self.sess.run(tf.local_variables_initializer())
 
-        if wandb.run is not None:
+        if wandb.run is not None and not self.continue_finetuning:
             wandb.config.update({
-                "checkpoint_dir": checkpoint_dir,
-                "start_checkpoint": checkpoint,
+                "input_checkpoint_dir": checkpoint_dir,
+                "input_checkpoint": checkpoint,
                 "tf_dev": tf_dev,
             })
         return checkpoint
@@ -122,7 +122,7 @@ def run_finetuning(data_path=DET_DATA_DIR, checkpoint_dir=os.path.join(CHECKPOIN
     '''
     Run train and test iterations on unet2 for n_iters.
 
-    Saves mettrics and checkpoints to checkpoint_dir.
+    Saves metrics and checkpoints to checkpoint_dir.
 
     :param data_path: dir holding .npz files.
     :param checkpoint_dir: used to build latest checkpoint, also to store newly trained checkpoints only if output_checkpoint_dir is not None.
@@ -147,4 +147,8 @@ def run_finetuning(data_path=DET_DATA_DIR, checkpoint_dir=os.path.join(CHECKPOIN
     if output_checkpoint_dir:
         func.make_dir(output_checkpoint_dir)
         model_obj.checkpoint_dir = output_checkpoint_dir
+    if wandb.run is not None:
+        wandb.config.update({
+            "output_checkpoint_dir": output_checkpoint_dir,
+        })
     return train_detection.run_training_on_model(model_obj, start_iter, n_iters, return_img)

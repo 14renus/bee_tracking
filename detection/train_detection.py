@@ -290,15 +290,15 @@ class TrainModel:
         return img
 
 def run_training_on_model(model_obj, start_iter, n_iters, return_img):
-    if wandb.run is not None:
-        wandb.config.update({
-            "epochs": n_iters,
-        })
-
     for i in range(start_iter, start_iter + n_iters):
         print("ITERATION: %i" % i, flush=True)
         img = model_obj.run_train_test_iter(i, return_img=return_img)
         model_obj.saver.save(model_obj.sess, os.path.join(model_obj.checkpoint_dir, 'model_%06d.ckpt' % i))
+        # Increment num of traineing epochs.
+        if wandb.run is not None:
+            wandb.config.update({
+                "epochs": wandb.config.get('epochs',0)+1,
+            })
     return model_obj, img, start_iter + n_iters
 
 

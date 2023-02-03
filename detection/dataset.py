@@ -133,5 +133,5 @@ def create_from_frames(frame_nbs, img_dir, pos_dir, out_dir=paths.DET_DATA_DIR, 
         out_file_name = ("%06d.npz" % fl_nb)
     else:
         out_file_name = out_file_name + '.npz'
-    np.savez(os.path.join(out_dir, out_file_name), data=res, det=pos)
+    np.savez(os.path.join(out_dir, out_file_name), data=res)
 

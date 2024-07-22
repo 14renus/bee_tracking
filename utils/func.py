@@ -1,4 +1,6 @@
+import cv2
 import os, sys, re
+import itertools
 import numpy as np
 from PIL import Image
 from multiprocessing import Pool
@@ -22,6 +24,19 @@ FR_W = 256*6 # 1536 (X dimension)
 NUM_LAYERS = 3
 NUM_FILTERS = 32
 CLASSES = 3
+
+def make_dir(dir):
+    if not os.path.exists(dir):
+        os.makedirs(dir)
+
+def get_all_files(dirs):
+    fls = []
+    for dr in dirs:
+        dr_fls = os.listdir(dr)
+        dr_fls.sort()
+        fls.extend(map(lambda fl: os.path.join(dr, fl), dr_fls))
+    print("%i files" % len(fls), flush=True)
+    return fls
 
 def find_last_checkpoint(path):
     files = [f for f in os.listdir(path) if re.search('index$', f)]
@@ -72,6 +87,18 @@ def crop(img, y, x):
     d[x1:x2,y1:y2] = img[max(0, x - SQ):min(x + SQ, img.shape[0]), max(0, y - SQ):min(y + SQ, img.shape[1])]
     return d
 
+def generate_offsets_for_frame(img_shape):
+    """
+    Generate offset (x,y) coordinates, to create 256x256 patches on each frame.
+
+    :param img_shape tupe holding (height, width) of frame.
+    :return list of tuples of (off_x, off_y) corresponding to offset of width and height.
+    """
+    check_img_shape(img_shape)
+    h, w = img_shape
+    xs = range(0, w, DS)
+    ys = range(0, h, DS)
+    return list(itertools.product(xs, ys))
 
 def t2n(i, fls, txt_path, npy_path):
     fl = fls[i]
@@ -102,3 +129,33 @@ class DownloadProgress:
             sys.stdout.write("%i%%.. " % percent)
         if percent == 100:
             sys.stdout.write('done!\n')
+
+def CHECK(cond, error_message):
+    if not cond:
+        print(error_message)
+        return True
+    return False
+
+def get_preprocessed_frame(cap, index):
+    cap.set(cv2.CAP_PROP_POS_FRAMES, index)
+    is_success,frame = cap.read()
+    if is_success:
+        frame = cv2.cvtColor(frame, cv2.COLOR_RGB2GRAY)
+    return is_success, frame
+
+def get_frame_from_video_capture(frame_i, cap):
+    if CHECK(cap.isOpened(),'cap isOpened() is false'): return
+
+    is_success, frame = get_preprocessed_frame(cap, frame_i)
+    if CHECK(is_success, "Failed to read frame: " + str(frame_i)): return
+    return frame
+
+
+def clipped_sigmoid(X):
+    np.clip(X, -1, 1)
+    return 1 / (1 + np.exp(-X))
+
+def enumerate2(xs, start=0, step=1):
+    while start< len(xs):
+        yield (start, xs[start])
+        start += step

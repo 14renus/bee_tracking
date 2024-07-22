@@ -9,10 +9,9 @@ import time
 import numpy as np
 import math
 import shutil
-import itertools
 import multiprocessing
 from utils.paths import DATA_DIR, IMG_DIR, POS_DIR, TMP_DIR, CHECKPOINT_DIR
-from utils.func import DS, GPU_NAME, NUM_LAYERS, NUM_FILTERS, CLASSES
+from utils.func import DS, GPU_NAME, NUM_LAYERS, NUM_FILTERS, CLASSES, clipped_sigmoid, generate_offsets_for_frame
 from utils import func
 
 N_PROC = 3
@@ -22,26 +21,8 @@ tf.logging.set_verbosity(tf.logging.ERROR)
 
 to_save = multiprocessing.Queue()
 
-def read_all_files(img_dir):
-    drs = [img_dir]
-    fls = []
-    for dr in drs:
-        dr_fls = os.listdir(dr)
-        dr_fls.sort()
-        fls.extend(map(lambda fl: os.path.join(dr, fl), dr_fls))
-    print("%i files" % len(fls), flush=True)
-    return fls
-
 def get_img_shape(img_dir):
     return func.read_img(0, img_dir).shape
-
-# Generate offset (x,y) coordinates, to create 256x256 patches on each frame.
-def generate_offsets_for_frame(img_shape):
-    func.check_img_shape(img_shape) 
-    h, w = img_shape
-    xs = range(0, w, DS)
-    ys = range(0, h, DS)
-    return list(itertools.product(xs, ys))
 
 ######## POSTPROCESSING AND SAVING SEGMENTATION RESULTS ############
 
@@ -78,8 +59,12 @@ def save_output_worker(total_frames, output_dir):
 
 class DetectionInference:
 
-    def __init__(self):
+    def __init__(self, num_classes=CLASSES, labelled_data_file=None, loss_upweight=3000):
+        self.num_classes = num_classes
         self.batch_data = np.zeros((BATCH_SIZE, DS, DS, 1), dtype=np.float32)
+        self.calc_metrics = (labelled_data_file is not None)
+        self.labelled_data_file=labelled_data_file
+        self.loss_upweight = loss_upweight
 
     def __enter__(self):
         return self
@@ -100,8 +85,17 @@ class DetectionInference:
                 self.placeholder_img = tf.placeholder(tf.float32, shape=(BATCH_SIZE, DS, DS, 1), name="images")
                 self.placeholder_prior = tf.placeholder(tf.float32, shape=(BATCH_SIZE, DS, DS, NUM_FILTERS), name="prior")
 
-                logits, last_relu, angle_pred = unet.create_unet2(NUM_LAYERS, NUM_FILTERS, self.placeholder_img, self.is_train, prev=self.placeholder_prior, classes=CLASSES)
-                self.outputs= (logits, angle_pred)
+                logits, last_relu, angle_pred = unet.create_unet2(NUM_LAYERS, NUM_FILTERS, self.placeholder_img, self.is_train, prev=self.placeholder_prior, num_classes=CLASSES)
+                if self.calc_metrics:
+                    self.placeholder_label = tf.placeholder(tf.uint8, shape=(None, DS, DS), name="labels")
+                    self.placeholder_weight = tf.placeholder(tf.float32, shape=(None, DS, DS), name="weight")
+                    self.placeholder_angle_label = tf.placeholder(tf.float32, shape=(None, DS, DS), name="angle_labels")
+                    logits, total_loss, last_relu, angle_pred,loss_softmax, loss_angle = self._loss(logits, self.placeholder_label,
+                                                                 self.placeholder_weight, angle_pred, self.placeholder_angle_label,
+                                                                 self.placeholder_prior)
+                    self.outputs = (logits, angle_pred, total_loss, last_relu, loss_softmax, loss_angle)
+                else:
+                    self.outputs= (logits, angle_pred)
                 self.priors = last_relu
                 tf.get_variable_scope().reuse_variables()
                 #update_ops.extend(tf.get_collection(tf.GraphKeys.UPDATE_OPS))
@@ -115,8 +109,23 @@ class DetectionInference:
             self.saver.restore(self.sess, checkpoint_file)
             init = tf.local_variables_initializer()
             self.sess.run(init)
+    
+    def _loss(self, logits, label, weight, angle_pred, angle_label, prior):
+        last_relu = prior
 
+        loss_softmax = unet.loss(logits, label, weight, self.num_classes)
+        loss_angle = unet.angle_loss(angle_pred, angle_label, weight, ignore_bg=True, use_weights=False)
 
+        total_loss = loss_softmax + loss_angle 
+        return logits, total_loss, last_relu, angle_pred, loss_softmax, loss_angle
+
+    def _accuracy(self, step, loss, logits, angle_preds, batch_data, loss_softmax, loss_angle):
+        batch_data = batch_data[:, step, :, :, :]
+        labels = batch_data[:,1,:,:]
+        angle_labels = batch_data[:,2,:,:]
+
+        return unet.metrics(loss, logits, labels, angle_preds, angle_labels, loss_softmax, loss_angle, self.num_classes)
+  
     def _feed_dict(self, offs, fl, priors):
         img = func.read_img(img_file=fl)
         for batch_i in range(BATCH_SIZE):
@@ -125,9 +134,8 @@ class DetectionInference:
                 self.batch_data[batch_i,:,:,0] = img[off_y:(off_y + DS), off_x:(off_x + DS)]
             else:
                 self.batch_data[batch_i, :, :, :] = 0
-        res = [(self.placeholder_prior, priors), (self.placeholder_img, self.batch_data)]
+        res = {self.placeholder_prior:priors, self.placeholder_img:self.batch_data}
         return dict(res)
-
 
     def _load_offs_for_run(self, offsets, start_i):
         res = []
@@ -137,6 +145,13 @@ class DetectionInference:
             start_i = start_i + 1
         return res, start_i
 
+    def _load_labels(self, offsets, data):
+        batch_size = len(offsets)
+        res = np.zeros((batch_size, data.shape[0], data.shape[1], DS, DS))
+        for i, (off_x, off_y) in enumerate(offsets):
+            if (off_x >= 0) and (off_y >= 0):
+                res[i] = np.copy(data[:, :, off_y:(off_y + DS), off_x:(off_x + DS)])
+        return res
 
     '''
     Start threads to process segmentation results and save .txt files in pos_dir, per frame.
@@ -148,6 +163,8 @@ class DetectionInference:
     def start_workers(self, total_frames, pos_dir=POS_DIR):
         self.workers = [multiprocessing.Process(target=save_output_worker, args=(total_frames,pos_dir,)) for _ in range(N_PROC)]
         for p in self.workers:
+            p.daemon=True # Attempts to terminate daemonic child processes.
+            print("Starting worker:",p,p.pid)
             p.start()
 
     def stop_workers(self):
@@ -157,7 +174,10 @@ class DetectionInference:
             p.join()
 
     def _save_output(self, outs, output_i):
-        log_res = np.argmax(outs[0], axis=3)
+        if self.num_classes > 2:
+            log_res = np.argmax(outs[0], axis=3)
+        else:
+            log_res = np.round(clipped_sigmoid(outs[0].squeeze()))
         angle_res = outs[1][:, :, :, 0]
         res = np.append(np.expand_dims(log_res, axis=1), np.expand_dims(angle_res, axis=1), axis=1)
         np.save(os.path.join(TMP_DIR, "segm_outputs_%i.npy" % output_i), res)
@@ -167,11 +187,13 @@ class DetectionInference:
         t1 = time.time()
         output_i = 0
         n_runs = math.ceil(len(offsets) / BATCH_SIZE)
+        print('num patches per frame:', n_runs)
         print("STARTING INFERENCE")
         for i in range(n_runs):
             run_offs, start_off_i = self._load_offs_for_run(offsets, start_off_i)
             last_priors = np.zeros((BATCH_SIZE, DS, DS, NUM_FILTERS), dtype=np.float32)
-            for cur_fr,fl in enumerate(fls):
+            for step, fl in enumerate(fls):
+                cur_fr = int(os.path.splitext(os.path.basename(fl))[0])
                 feed_dict = self._feed_dict(run_offs, fl, last_priors)
                 outs, last_priors = self.sess.run([self.outputs, self.priors], feed_dict=feed_dict)
                 self._save_output(outs, output_i)
@@ -179,27 +201,132 @@ class DetectionInference:
                 output_i += 1
 
         print("ALL FINISHED - time: %.3f min" % ((time.time() - t1)/60))
+    
+    def run_inference_and_metrics(self, fls, offsets, start_off_i=0):
+            global to_save
 
+            npz = np.load(os.path.join(self.labelled_data_file))
+            data = npz['data']
+
+            t1 = time.time()
+            output_i = 0
+            n_runs = math.ceil(len(offsets) / BATCH_SIZE)
+            print('num patches per frame:', n_runs)
+            print("STARTING INFERENCE")
+            accuracy_t = np.zeros((8))
+            for i in range(n_runs):
+                run_offs, start_off_i = self._load_offs_for_run(offsets, start_off_i)
+                batch_data = self._load_labels(run_offs, data)
+                last_priors = np.zeros((BATCH_SIZE, DS, DS, NUM_FILTERS), dtype=np.float32)
+                for step, fl in enumerate(fls):
+                    cur_fr = int(os.path.splitext(os.path.basename(fl))[0])
+                    feed_dict = self._feed_dict(run_offs, fl, last_priors)
+                    feed_dict[self.placeholder_label] = batch_data[:,step,1,:,:]
+                    feed_dict[self.placeholder_angle_label] = batch_data[:,step,2,:,:]
+                    feed_dict[self.placeholder_weight] = batch_data[:,step,3,:,:]*(self.loss_upweight-1)+1
+                    outs, last_priors = self.sess.run([self.outputs, self.priors], feed_dict=feed_dict)
+                    accuracy_t += self._accuracy(step, outs[2], outs[0], outs[1], batch_data, outs[4], outs[5])
+                    self._save_output(outs, output_i)
+                    to_save.put((output_i, run_offs, cur_fr))
+                    output_i += 1
+
+            print("ALL FINISHED - time: %.3f min" % ((time.time() - t1)/60))
+            accuracy_t = accuracy_t / (n_runs*len(fls))
+            print("METRICS - time: %.3f min, loss: %.3f, class loss: %.3f, angle loss: %.3f, background overlap: %.3f, foreground overlap: %.3f, class error: %.3f, angle error: %.3f" % ((time.time() - t1) / 60, accuracy_t[1], accuracy_t[6],accuracy_t[7], accuracy_t[2], accuracy_t[3], accuracy_t[4], accuracy_t[5]), flush=True)
+
+class FinetunedDetectionInference(DetectionInference):
+
+    def __init__(self, num_classes=2,labelled_data_file=None,loss_upweight=3000,):
+        super().__init__(num_classes,labelled_data_file,loss_upweight)
+
+
+    def build_model(self, checkpoint_dir):
+        cpu, gpu = func.find_devices()
+        tf_dev = gpu if gpu != "" else cpu
+        with tf.Graph().as_default(), tf.device(cpu):
+            # equals the number of batches processed * num_gpus.
+            # update_ops = []
+            self.is_train = False
+
+            with tf.device(tf_dev), tf.name_scope('%s_%d' % (GPU_NAME, 0)) as scope:
+                self.placeholder_img = tf.placeholder(tf.float32, shape=(BATCH_SIZE, DS, DS, 1), name="images")
+                self.placeholder_prior = tf.placeholder(tf.float32, shape=(BATCH_SIZE, DS, DS, NUM_FILTERS),
+                                                        name="prior")
+                # Original unet.
+                logits, last_relu, angle_pred = unet.create_unet2(NUM_LAYERS, NUM_FILTERS, self.placeholder_img,
+                                                                  self.is_train, prev=self.placeholder_prior,
+                                                                  num_classes=CLASSES)
+                # Add finetuned layer.
+                conv_logits = unet._create_conv_relu(last_relu, "new_conv_logits", NUM_FILTERS,
+                                                     dropout_ratio=0,
+                                                     is_training=self.is_train)
+                classes = self.num_classes if self.num_classes > 2 else 1
+                logits = unet._create_conv_relu(conv_logits, "new_logits", classes, 0,
+                                                is_training=self.is_train)
+
+                if self.calc_metrics:
+                    self.placeholder_label = tf.placeholder(tf.uint8, shape=(None, DS, DS), name="labels")
+                    self.placeholder_weight = tf.placeholder(tf.float32, shape=(None, DS, DS), name="weight")
+                    self.placeholder_angle_label = tf.placeholder(tf.float32, shape=(None, DS, DS), name="angle_labels")
+                    logits, total_loss, last_relu, angle_pred,loss_softmax, loss_angle = self._loss(logits, self.placeholder_label,
+                                                                 self.placeholder_weight, angle_pred, self.placeholder_angle_label,
+                                                                 self.placeholder_prior)
+                    self.outputs = (logits, angle_pred, total_loss, last_relu, loss_softmax, loss_angle)
+                else:
+                    self.outputs= (logits, angle_pred)
+
+                self.priors = last_relu
+                tf.get_variable_scope().reuse_variables()
+
+            self.saver = tf.train.Saver(tf.global_variables())
+            self.sess = tf.Session(config=tf.ConfigProto(allow_soft_placement=True))
+            checkpoint_nb = func.find_last_checkpoint(checkpoint_dir)
+            checkpoint_file = os.path.join(checkpoint_dir, "model_%06d.ckpt" % checkpoint_nb)
+            print("Restoring checkpoint %i.." % checkpoint_nb, flush=True)
+            self.saver.restore(self.sess, checkpoint_file)
+            init = tf.local_variables_initializer()
+            self.sess.run(init)
 
 ######## MAIN FUNCTION ##############
 
-def find_detections(checkpoint_dir=os.path.join(CHECKPOINT_DIR, "unet2"), img_dir=IMG_DIR, pos_dir=POS_DIR):
-    print(DATA_DIR)
-    if os.path.exists(pos_dir):
-        shutil.rmtree(pos_dir)
-    os.mkdir(pos_dir)
+def find_detections(checkpoint_dir=os.path.join(CHECKPOINT_DIR, "unet2"), img_dir=IMG_DIR, pos_dir=POS_DIR, overwrite=False,
+                    labelled_data_file=None, loss_upweight=3000,
+                    det_model_class=DetectionInference):
+    '''
+    Run inferrence and write position detections for sequence of frames.
+
+    :param checkpoint_dir: directory holding model checkpoint to load for inferrence.
+    :param img_dir: directory storing sequence of frames.
+    :param pos_dir: output directory to store detections.
+    :param overwrite: whether to overwrite positions in directory.
+    :param labelled_data_file: full path to .npz file holding labels. Enables to also calculate loss and error metrics.
+    :param loss_upweight: only used if labelled_data_file is passed, and need to compute metrics (including weighted loss).
+    :param det_model_class: which model class to use to load model from checkpoint.
+           DetectionInference to load original model checkpoint, FinetunedDetectionInference to load finetuned model.
+    '''
+    # Don't overwrite previous detections.
+    if not overwrite and os.path.exists(pos_dir) and len(os.listdir(pos_dir))!=0:
+        print('WARNING dir %s already exists. Set overwrite to True to write anyways.' % (pos_dir))
+        return
+
+    func.make_dir(pos_dir)
     if not os.path.exists(TMP_DIR):
         os.mkdir(TMP_DIR)
 
-    fls = read_all_files(img_dir)
+    fls = func.get_all_files([img_dir])
     num_fls = len(fls)
 
     img_shape = get_img_shape(img_dir)
     offsets = generate_offsets_for_frame(img_shape)
-    with DetectionInference() as model_obj:
+    print('frame shape:', img_shape)
+
+    with det_model_class(labelled_data_file=labelled_data_file, loss_upweight=loss_upweight) as model_obj:
         model_obj.build_model(checkpoint_dir)
         model_obj.start_workers(num_fls, pos_dir)
         try:
-            model_obj.run_inference(fls, offsets)
+            if labelled_data_file:
+                model_obj.run_inference_and_metrics(fls, offsets)
+            else:
+                model_obj.run_inference(fls, offsets)
         finally:
             model_obj.stop_workers()

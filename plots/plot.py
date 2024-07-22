@@ -8,7 +8,7 @@ from datetime import time
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
-from utils.func import FR1, FR2, SQ
+from utils.func import FR1, FR2, SQ, make_dir
 from utils.paths import TRACK_DIR, IMG_DIR, POS_DIR, PLOTS_DIR
 
 WIDTH = 2
@@ -227,11 +227,20 @@ def plot_all_trajectories(fps=10):
 ##################################################################
 
 
-def plot_detections(fr, save, img_dir=IMG_DIR, pos_dir=POS_DIR, fps=10):
+def plot_detections(fr=None, save=False, img_dir=IMG_DIR, pos_dir=POS_DIR, fps=10, frame_path=None):
+    '''
+    Plot positions on frame from img_dir.
+
+    Must specify either fr (frame number) or frame_path from which frame number is inferred.
+    '''
     if save:
         if not os.path.exists(PLOTS_DIR):
             os.mkdir(PLOTS_DIR)
 
+    if fr is None:
+      if frame_path is None:
+        print("Error: must specifiy fr (frame number) or frame_path")
+      fr = int(os.path.basename(frame_path).replace('.png',''))
     img = Image.open(os.path.join(img_dir, "%06d.png" % fr)).convert('RGBA')
     try:
       all_bees = np.loadtxt(os.path.join(pos_dir, "%06d.txt" % fr), delimiter=',').astype(np.int)
@@ -263,8 +272,7 @@ def plot_detections(fr, save, img_dir=IMG_DIR, pos_dir=POS_DIR, fps=10):
     return img
 
 def plot_detection_video(start_frame=FR1, end_frame=FR2, fps=10, img_dir=IMG_DIR, pos_dir=POS_DIR, plots_dir=PLOTS_DIR):
-    if not os.path.exists(plots_dir):
-        os.mkdir(plots_dir)
+    make_dir(plots_dir)
 
     imgs = [ plot_detections(fr, False, img_dir, pos_dir, fps) for fr in range(start_frame, end_frame) ]
 

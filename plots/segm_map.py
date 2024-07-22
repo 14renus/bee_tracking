@@ -6,7 +6,8 @@ from utils.paths import DET_DATA_DIR, PLOTS_DIR
 
 
 def plot_segm_map_np(img, map):
-    map = map / np.max(map)
+    if np.max(map) != 0:
+        map = map / np.max(map)
 
     map_img = Image.new("RGBA", (map.shape[1], map.shape[0]), color=(0,0,0,0))
 
@@ -60,14 +61,14 @@ def plot_weight_map(frame_nb, fl_nb=0, data_path=DET_DATA_DIR, save=False):
     img = data[frame_nb, 0, :, :]
     map = data[frame_nb, 3, :, :]
 
-    map = map - 1
+    # map = map - 1
     map = 150 * map / np.max(map)
     map = map.astype(np.int)
     map_img = Image.new("RGBA", map.shape, color=(0,0,0,0))
     for i1 in range(map.shape[0]):
         for i2 in range(map.shape[1]):
-            if (map[i1,i2] > 1):
-                map_img.putpixel((i1,i2), (255, 0, 0, map[i1,i2]))
+            if (map[i1,i2] > 0):
+                map_img.putpixel((i2,i1), (255, 0, 0, map[i1,i2]))
 
     im = Image.fromarray(np.uint8((img+1)/2 * 255))
     im = im.convert("RGBA")
